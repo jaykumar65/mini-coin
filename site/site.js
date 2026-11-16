@@ -1,5 +1,5 @@
 // MNC टेस्टनेट रिकॉर्ड साइट
-// Supabase की `blocks` टेबल को सिर्फ़ पढ़ती है (GET)। लिखने का कोई कोड नहीं।
+// Supabase की `blocks` और `transfers` टेबल को सिर्फ़ पढ़ती है (GET)। लिखने का कोई कोड नहीं।
 
 "use strict";
 
@@ -21,6 +21,8 @@
     balancesEmpty: $("balances-empty"),
     blocks: $("blocks"),
     blocksEmpty: $("blocks-empty"),
+    transfers: $("transfers"),
+    transfersEmpty: $("transfers-empty"),
   };
 
   const fmt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 8 });
@@ -43,6 +45,31 @@
         base + "/rest/v1/" + table + "?select=*&order=idx.asc" +
         "&limit=" + PAGE + "&offset=" + offset;
       const res = await fetch(url, { headers, cache: "no-store" });
+      if (!res.ok) {
+        const err = new Error("http");
+        err.status = res.status;
+        throw err;
+      }
+      const page = await res.json();
+      if (!Array.isArray(page)) throw new Error("format");
+      rows.push(...page);
+      if (page.length < PAGE) break;
+    }
+    return rows;
+  }
+
+  // लेन-देन (transfers)। टेबल अभी न बनी हो (404) तो खाली सूची।
+  async function fetchTransfers() {
+    const base = String(CFG.supabaseUrl || "").replace(/\/+$/, "");
+    const headers = { apikey: CFG.supabaseKey, Authorization: "Bearer " + CFG.supabaseKey, Accept: "application/json" };
+    const rows = [];
+    for (let offset = 0; ; offset += PAGE) {
+      const res = await fetch(
+        base + "/rest/v1/transfers?select=id,from_addr,to_addr,amount,created_at&order=id.asc" +
+        "&limit=" + PAGE + "&offset=" + offset,
+        { headers, cache: "no-store" }
+      );
+      if (res.status === 404) return [];
       if (!res.ok) {
         const err = new Error("http");
         err.status = res.status;
@@ -118,7 +145,8 @@
     return firstBad;
   }
 
-  function balancesOf(blocks) {
+  // बैलेंस = मिले इनाम + आए हुए कॉइन - भेजे हुए कॉइन
+  function balancesOf(blocks, transfers) {
     const totals = new Map();
     for (const b of blocks) {
       if (!b.trusted) continue;
@@ -127,6 +155,15 @@
       cur.amount += b.reward;
       cur.blocks += 1;
       totals.set(who, cur);
+    }
+    const entry = (who) => {
+      if (!totals.has(who)) totals.set(who, { amount: 0, blocks: 0 });
+      return totals.get(who);
+    };
+    for (const t of transfers) {
+      const amount = Number(t.amount) || 0;
+      entry(String(t.from_addr)).amount -= amount;
+      entry(String(t.to_addr)).amount += amount;
     }
     return [...totals.entries()].sort((a, b) => b[1].amount - a[1].amount);
   }
@@ -150,9 +187,9 @@
     return h.length > 20 ? h.slice(0, 12) + "…" + h.slice(-6) : h || "—";
   }
 
-  function render(blocks) {
+  function render(blocks, transfers) {
     const firstBad = validate(blocks);
-    const balances = balancesOf(blocks);
+    const balances = balancesOf(blocks, transfers);
     const supply = balances.reduce((a, [, v]) => a + v.amount, 0);
 
     el.count.textContent = fmt.format(blocks.length);
@@ -208,6 +245,20 @@
       })
     );
     el.blocksEmpty.hidden = blocks.length > 0;
+
+    // लेन-देन: नए से पुराने
+    el.transfers.replaceChildren(
+      ...transfers.slice().reverse().map((t) => {
+        const tr = document.createElement("tr");
+        const from = cell(shortHash(String(t.from_addr)), "mono");
+        from.title = t.from_addr;
+        const to = cell(shortHash(String(t.to_addr)), "mono");
+        to.title = t.to_addr;
+        tr.append(cell("#" + t.id, "num"), from, to, cell(fmt.format(Number(t.amount)), "num"), cell(formatTime(t.created_at)));
+        return tr;
+      })
+    );
+    el.transfersEmpty.hidden = transfers.length > 0;
   }
 
   async function load() {
@@ -215,8 +266,8 @@
     el.loading.hidden = false;
     el.error.hidden = true;
     try {
-      const rows = await fetchBlocks();
-      render(rows.map(normalize));
+      const got = await Promise.all([fetchBlocks(), fetchTransfers()]);
+      render(got[0].map(normalize), got[1]);
       el.content.hidden = false;
     } catch (err) {
       el.content.hidden = true;

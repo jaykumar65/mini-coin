@@ -116,7 +116,7 @@
     <div class="top">
       <div>
         <h1>MNC टेस्टनेट रिकॉर्ड</h1>
-        <p class="sub">दर्ज हुए ब्लॉक, बैलेंस और चेन की जाँच।</p>
+        <p class="sub">दर्ज हुए ब्लॉक, लेन-देन, बैलेंस और चेन की जाँच।</p>
       </div>
       <button id="btn-reload" type="button">फिर से लोड करें</button>
     </div>
@@ -149,9 +149,22 @@
         <div class="scroll">
           <table>
             <thead>
-              <tr><th>माइनर</th><th class="num">ब्लॉक</th><th class="num">बैलेंस (MNC)</th></tr>
+              <tr><th>पता</th><th class="num">माइन किए ब्लॉक</th><th class="num">बैलेंस (MNC)</th></tr>
             </thead>
             <tbody id="balances"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>लेन-देन</h2>
+        <p id="transfers-empty" class="empty">अभी तक कोई लेन-देन नहीं हुआ।</p>
+        <div class="scroll">
+          <table>
+            <thead>
+              <tr><th class="num">नंबर</th><th>किसने भेजा</th><th>किसे मिला</th><th class="num">राशि (MNC)</th><th>समय</th></tr>
+            </thead>
+            <tbody id="transfers"></tbody>
           </table>
         </div>
       </section>
