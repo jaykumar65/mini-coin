@@ -7,7 +7,7 @@
 
 "use strict";
 
-const CACHE_VERSION = "v6";
+const CACHE_VERSION = "v7";
 const CACHE_PREFIX = "mnc-miner-";
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
@@ -15,6 +15,8 @@ const ASSETS = [
   "./",
   "index.html",
   "miner.js",
+  "wallet.html",
+  "wallet-core.js",
   "wallet.js",
   "worker.js",
   "manifest.json",

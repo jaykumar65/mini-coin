@@ -98,38 +98,33 @@
     .field + .field { margin-top: 12px; }
     .field input[type="text"] { width: 160px; font-size: 1rem; text-align: left; padding: 0 12px; }
 
-    .wallet h2 { margin-bottom: 8px; }
-    .wallet .note { margin-top: 0; }
-    .wallet-label { color: var(--muted); font-size: 0.85rem; }
-    .wallet-balance { margin: 6px 0 12px; }
-    .wallet-balance b { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
-    .wallet-balance small { display: block; color: var(--muted); }
-    .wallet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
-    .wallet-actions button { min-height: 44px; padding: 0 14px; font-weight: 600; font-size: 0.9rem; }
-    .wallet-box { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
-    .wallet-box label { display: block; font-weight: 600; margin-bottom: 6px; }
-    .wallet-box textarea {
-      width: 100%;
-      margin-bottom: 10px;
-      padding: 10px;
-      font-family: ui-monospace, Consolas, monospace;
-      font-size: 0.8rem;
-      color: var(--text);
-      background: var(--bg);
+    .wallet-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+      background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 10px;
-      resize: vertical;
+      border-radius: 14px;
+      color: var(--text);
+      text-decoration: none;
     }
-    .wallet-msg { margin: 12px 0 0; font-size: 0.9rem; }
-    .wallet-msg.ok { color: var(--ok); }
-    .wallet-msg.bad { color: var(--warn-text); }
-    #wallet-none ~ .wallet-actions #btn-wallet-copy,
-    #wallet-none ~ .wallet-actions #btn-wallet-refresh,
-    #wallet-none ~ .wallet-actions #btn-wallet-backup { display: none; }
-    #wallet-none[hidden] ~ .wallet-actions #btn-wallet-copy,
-    #wallet-none[hidden] ~ .wallet-actions #btn-wallet-refresh,
-    #wallet-none[hidden] ~ .wallet-actions #btn-wallet-backup { display: inline-block; }
-    #wallet-none[hidden] ~ .wallet-actions #btn-wallet-create { display: none; }
+    .wallet-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .wallet-bar-coin {
+      display: grid;
+      place-items: center;
+      width: 40px; height: 40px;
+      flex: none;
+      border-radius: 50%;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font-weight: 800;
+    }
+    .wallet-bar-text { flex: 1; min-width: 0; }
+    .wallet-bar-text b { display: block; font-variant-numeric: tabular-nums; }
+    .wallet-bar-text small { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .wallet-bar-go { color: var(--muted); font-size: 1.6rem; }
 
     .send { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; }
     .send button { min-height: 44px; padding: 0 18px; }
@@ -229,47 +224,15 @@
       <p id="install-hint">ब्राउज़र मेनू से 'Add to Home screen' चुनें।</p>
     </div>
 
-    <section class="card wallet" aria-labelledby="wallet-title">
-      <h2 id="wallet-title">वॉलेट</h2>
-
-      <div id="wallet-none">
-        <p class="note">इनाम आपके वॉलेट के पते पर दर्ज होता है। वॉलेट इसी डिवाइस पर बनता है और यहीं रहता है।</p>
-      </div>
-
-      <div id="wallet-have" hidden>
-        <div class="wallet-label">आपका पता</div>
-        <code id="wallet-address" class="hash"></code>
-        <div class="wallet-balance"><b id="wallet-balance">—</b> MNC <small>बैलेंस (टेस्ट कॉइन, कोई मूल्य नहीं)</small></div>
-      </div>
-
-      <div class="wallet-actions">
-        <button id="btn-wallet-create" class="primary" type="button">नया वॉलेट बनाएँ</button>
-        <button id="btn-wallet-copy" type="button">पता कॉपी करें</button>
-        <button id="btn-wallet-refresh" type="button">बैलेंस ताज़ा करें</button>
-        <button id="btn-wallet-backup" type="button">बैकअप लें</button>
-        <button id="btn-wallet-restore-open" type="button">पुराना वॉलेट वापस लाएँ</button>
-      </div>
-
-      <div id="wallet-backup" class="wallet-box" hidden>
-        <p class="note">यह आपके वॉलेट का बैकअप कोड है। इसे सुरक्षित जगह रखें और किसी को न दें: जिसके पास यह कोड है, वही इस वॉलेट का मालिक है। कोड खो गया और फ़ोन बदल गया, तो वॉलेट वापस नहीं आ सकता।</p>
-        <textarea id="wallet-backup-code" rows="4" readonly aria-label="बैकअप कोड"></textarea>
-        <div class="wallet-actions">
-          <button id="btn-wallet-backup-copy" type="button">कोड कॉपी करें</button>
-          <button id="btn-wallet-backup-close" type="button">बंद करें</button>
-        </div>
-      </div>
-
-      <div id="wallet-restore" class="wallet-box" hidden>
-        <label for="wallet-restore-code">बैकअप कोड यहाँ चिपकाएँ</label>
-        <textarea id="wallet-restore-code" rows="4" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
-        <div class="wallet-actions">
-          <button id="btn-wallet-restore" class="primary" type="button">वॉलेट वापस लाएँ</button>
-          <button id="btn-wallet-restore-cancel" type="button">रद्द करें</button>
-        </div>
-      </div>
-
-      <p id="wallet-msg" class="wallet-msg" aria-live="polite" hidden></p>
-    </section>
+    <!-- वॉलेट की पट्टी: पूरा वॉलेट wallet.html पर है -->
+    <a id="wallet-bar" class="wallet-bar" href="wallet.html">
+      <span class="wallet-bar-coin" aria-hidden="true">M</span>
+      <span class="wallet-bar-text">
+        <b id="wallet-bar-title">वॉलेट बनाएँ</b>
+        <small id="wallet-bar-sub">माइनिंग का इनाम वॉलेट के पते पर दर्ज होता है</small>
+      </span>
+      <span class="wallet-bar-go" aria-hidden="true">›</span>
+    </a>
 
     <section class="card">
       <div class="field">
@@ -318,7 +281,6 @@
     </section>
   </main>
 
-  <script src="wallet.js"></script>
   <script src="miner.js"></script>
 
   <!-- PWA: service worker रजिस्ट्रेशन और "ऐप इंस्टॉल करें" बटन -->

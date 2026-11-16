@@ -54,8 +54,15 @@
 
   const fmt = new Intl.NumberFormat("en-IN");
 
-  // इनाम किस पते पर दर्ज हो: वॉलेट का पता (wallet.js); वॉलेट न हो तो ""
-  const minerAddress = () => (window.MNCWallet ? window.MNCWallet.address() : "");
+  // इनाम किस पते पर दर्ज हो: वॉलेट का पता (wallet.html पर बना, localStorage में); वॉलेट न हो तो ""
+  function minerAddress() {
+    try {
+      const w = JSON.parse(localStorage.getItem("mnc_wallet") || "null");
+      return w && /^MNC[0-9a-f]{40}$/.test(w.address) ? w.address : "";
+    } catch (_) {
+      return "";
+    }
+  }
 
   let worker = null;
   let starting = false;
@@ -269,7 +276,6 @@
     el.start.disabled = active;
     el.stop.disabled = !active;
     el.difficulty.disabled = active;
-    if (window.MNCWallet) window.MNCWallet.setLocked(active);
 
     let text = "रुका हुआ";
     if (worker) text = "माइनिंग चल रही है…";
@@ -317,7 +323,7 @@
       return;
     }
     if (!minerAddress()) {
-      showError("पहले ऊपर वॉलेट बनाएँ या वापस लाएँ; इनाम उसी के पते पर दर्ज होगा।");
+      showError("पहले ऊपर “वॉलेट” खोलकर वॉलेट बनाएँ या वापस लाएँ; इनाम उसी के पते पर दर्ज होगा।");
       return;
     }
 
@@ -458,7 +464,7 @@
     if (sending) return;
     const miner = minerAddress();
     if (!miner) {
-      showSendResult("पहले ऊपर वॉलेट बनाएँ या वापस लाएँ।", "bad");
+      showSendResult("पहले ऊपर “वॉलेट” खोलकर वॉलेट बनाएँ या वापस लाएँ।", "bad");
       return;
     }
 
@@ -482,7 +488,7 @@
           b.status = "accepted";
           delete b.reason;
           message = "सफल: ब्लॉक #" + b.index + " स्वीकार हुआ, " + CONFIG.reward + " MNC मिले।";
-          if (window.MNCWallet) window.MNCWallet.refreshBalance();
+          renderWalletBar();
           // इसके ऊपर बने बाक़ी ब्लॉक अंतराल की वजह से नहीं जा सकते
           for (const later of chain.slice(1)) markRejected(later, "10 मिनट में एक ही ब्लॉक स्वीकार होता है।");
         } else if (result.code === "cooldown") {
@@ -541,6 +547,31 @@
     }
   }
 
+  // ---------- वॉलेट की पट्टी ----------
+  // छोटा पता और बैलेंस; पूरा वॉलेट wallet.html पर खुलता है
+  async function renderWalletBar() {
+    const title = $("wallet-bar-title"), sub = $("wallet-bar-sub");
+    const address = minerAddress();
+    if (!address) {
+      title.textContent = "वॉलेट बनाएँ";
+      sub.textContent = "माइनिंग का इनाम वॉलेट के पते पर दर्ज होता है";
+      return;
+    }
+    sub.textContent = address.slice(0, 8) + "…" + address.slice(-5);
+    try {
+      const res = await fetch(API + "/rest/v1/rpc/mnc_balance", {
+        method: "POST",
+        headers: Object.assign({ "Content-Type": "application/json" }, API_HEADERS),
+        body: JSON.stringify({ addr: address }),
+        cache: "no-store",
+      });
+      if (!res.ok) throw new Error("http " + res.status);
+      title.textContent = fmt.format(Number(await res.json()) || 0) + " MNC";
+    } catch (_) {
+      title.textContent = "वॉलेट"; // बैलेंस न मिले तो भी पट्टी काम की रहे
+    }
+  }
+
   // हर सेकंड: इंतज़ार की उलटी गिनती, और समय पूरा होते ही अगला चक्र।
   // समय घड़ी से गिना जाता है, ताकि ब्राउज़र टाइमर धीमा कर दे तब भी देर न हो।
   function tick() {
@@ -581,4 +612,5 @@
   renderState();
   renderStats();
   renderBlocks();
+  renderWalletBar();
 })();
