@@ -15,14 +15,13 @@
 (function () {
   const CONFIG = Object.assign(
     {
-      difficulty: 5, minDifficulty: 5, maxDifficulty: 7, blockData: "MNC testnet",
+      difficulty: 5, minDifficulty: 5, maxDifficulty: 7,
       supabaseUrl: "", supabaseKey: "", reward: 50, cooldownMinutes: 10,
     },
     window.MNC_CONFIG || {}
   );
 
   const STORAGE_KEY = "mnc_testnet_blocks";
-  const NAME_KEY = "mnc_miner_name";
   const GENESIS_PREV = "0".repeat(64);
   const RATE_WINDOW_MS = 2000;
   const COOLDOWN_MS = CONFIG.cooldownMinutes * 60 * 1000;
@@ -43,7 +42,6 @@
     clear: $("btn-clear"),
     send: $("btn-send"),
     sendResult: $("send-result"),
-    minerName: $("miner-name"),
     difficulty: $("difficulty"),
     status: $("status"),
     tries: $("stat-tries"),
@@ -55,6 +53,9 @@
   };
 
   const fmt = new Intl.NumberFormat("en-IN");
+
+  // इनाम किस पते पर दर्ज हो: वॉलेट का पता (wallet.js); वॉलेट न हो तो ""
+  const minerAddress = () => (window.MNCWallet ? window.MNCWallet.address() : "");
 
   let worker = null;
   let starting = false;
@@ -132,7 +133,7 @@
         difficulty: b.difficulty,
         ts: b.timestamp,
         data: b.data,
-        miner: miner,
+        miner: b.data, // ब्लॉक उसी पते का है जिसके लिए वह माइन हुआ था
         reward: CONFIG.reward,
       }),
     });
@@ -148,7 +149,10 @@
     const chain = [];
     for (const b of blocks) {
       if (!isPending(b)) continue;
-      if (tip && b.index === tip.index && b.hash === tip.hash) {
+      if (b.data !== minerAddress()) {
+        // पुराने संस्करण का, या किसी दूसरे वॉलेट के लिए बना ब्लॉक
+        markRejected(b, "यह ब्लॉक इस वॉलेट के पते के लिए नहीं बना था।");
+      } else if (tip && b.index === tip.index && b.hash === tip.hash) {
         b.status = "accepted"; // यही ब्लॉक सर्वर पर आख़िरी है
         delete b.reason;
       } else if (b.index === base.index + 1 && b.prevHash === base.hash) {
@@ -265,7 +269,7 @@
     el.start.disabled = active;
     el.stop.disabled = !active;
     el.difficulty.disabled = active;
-    el.minerName.disabled = active;
+    if (window.MNCWallet) window.MNCWallet.setLocked(active);
 
     let text = "रुका हुआ";
     if (worker) text = "माइनिंग चल रही है…";
@@ -312,9 +316,8 @@
       );
       return;
     }
-    if (!el.minerName.value.trim()) {
-      showError("पहले माइनर का नाम लिखें; इनाम उसी नाम पर दर्ज होगा।");
-      el.minerName.focus();
+    if (!minerAddress()) {
+      showError("पहले ऊपर वॉलेट बनाएँ या वापस लाएँ; इनाम उसी के पते पर दर्ज होगा।");
       return;
     }
 
@@ -366,7 +369,7 @@
     if (!active || worker || starting || sending) return;
     nextAt = 0;
     showError("");
-    const miner = el.minerName.value.trim();
+    const miner = minerAddress();
 
     starting = true;
     renderState();
@@ -417,7 +420,9 @@
       difficulty: clampDifficulty(el.difficulty.value),
       index: state.tip.index + 1,
       prevHash: state.tip.hash,
-      data: CONFIG.blockData,
+      // data में वॉलेट का पता जाता है, इसलिए पता ब्लॉक के hash में बँध जाता है:
+      // कोई और इस ब्लॉक को अपने पते से नहीं भेज सकता (सर्वर data === miner जाँचता है)।
+      data: miner,
     });
 
     samples = [];
@@ -451,10 +456,9 @@
   // माइनर चालू (active) हो तो नतीजे के हिसाब से अगला चक्र अपने आप तय होता है।
   async function sendPending() {
     if (sending) return;
-    const miner = el.minerName.value.trim();
+    const miner = minerAddress();
     if (!miner) {
-      showSendResult("पहले ऊपर माइनर का नाम लिखें।", "bad");
-      el.minerName.focus();
+      showSendResult("पहले ऊपर वॉलेट बनाएँ या वापस लाएँ।", "bad");
       return;
     }
 
@@ -478,6 +482,7 @@
           b.status = "accepted";
           delete b.reason;
           message = "सफल: ब्लॉक #" + b.index + " स्वीकार हुआ, " + CONFIG.reward + " MNC मिले।";
+          if (window.MNCWallet) window.MNCWallet.refreshBalance();
           // इसके ऊपर बने बाक़ी ब्लॉक अंतराल की वजह से नहीं जा सकते
           for (const later of chain.slice(1)) markRejected(later, "10 मिनट में एक ही ब्लॉक स्वीकार होता है।");
         } else if (result.code === "cooldown") {
@@ -550,11 +555,6 @@
   el.difficulty.value = clampDifficulty(CONFIG.difficulty);
   el.difficulty.addEventListener("change", () => {
     el.difficulty.value = clampDifficulty(el.difficulty.value);
-  });
-
-  try { el.minerName.value = localStorage.getItem(NAME_KEY) || ""; } catch (_) {}
-  el.minerName.addEventListener("change", () => {
-    try { localStorage.setItem(NAME_KEY, el.minerName.value.trim()); } catch (_) {}
   });
 
   el.start.addEventListener("click", start);

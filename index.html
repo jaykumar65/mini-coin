@@ -16,7 +16,6 @@
       minDifficulty: 5,   // सर्वर इससे कम difficulty वाला ब्लॉक नहीं लेता
       cooldownMinutes: 10, // एक माइनर को इतने मिनट में एक ही ब्लॉक (सर्वर यही लागू करता है)
       maxDifficulty: 7,
-      blockData: "MNC testnet",
       reward: 50,
 
       // Supabase: सिर्फ़ सार्वजनिक (publishable) key। Secret / service_role key यहाँ कभी न डालें।
@@ -98,6 +97,39 @@
     .field input:disabled { opacity: 0.5; }
     .field + .field { margin-top: 12px; }
     .field input[type="text"] { width: 160px; font-size: 1rem; text-align: left; padding: 0 12px; }
+
+    .wallet h2 { margin-bottom: 8px; }
+    .wallet .note { margin-top: 0; }
+    .wallet-label { color: var(--muted); font-size: 0.85rem; }
+    .wallet-balance { margin: 6px 0 12px; }
+    .wallet-balance b { font-size: 1.5rem; font-variant-numeric: tabular-nums; }
+    .wallet-balance small { display: block; color: var(--muted); }
+    .wallet-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .wallet-actions button { min-height: 44px; padding: 0 14px; font-weight: 600; font-size: 0.9rem; }
+    .wallet-box { margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line); }
+    .wallet-box label { display: block; font-weight: 600; margin-bottom: 6px; }
+    .wallet-box textarea {
+      width: 100%;
+      margin-bottom: 10px;
+      padding: 10px;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.8rem;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      resize: vertical;
+    }
+    .wallet-msg { margin: 12px 0 0; font-size: 0.9rem; }
+    .wallet-msg.ok { color: var(--ok); }
+    .wallet-msg.bad { color: var(--warn-text); }
+    #wallet-none ~ .wallet-actions #btn-wallet-copy,
+    #wallet-none ~ .wallet-actions #btn-wallet-refresh,
+    #wallet-none ~ .wallet-actions #btn-wallet-backup { display: none; }
+    #wallet-none[hidden] ~ .wallet-actions #btn-wallet-copy,
+    #wallet-none[hidden] ~ .wallet-actions #btn-wallet-refresh,
+    #wallet-none[hidden] ~ .wallet-actions #btn-wallet-backup { display: inline-block; }
+    #wallet-none[hidden] ~ .wallet-actions #btn-wallet-create { display: none; }
 
     .send { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; }
     .send button { min-height: 44px; padding: 0 18px; }
@@ -189,7 +221,7 @@
 
   <main>
     <h1>MNC टेस्टनेट माइनर</h1>
-    <p class="sub">SHA-256 proof-of-work का सिमुलेशन। माइनिंग सिर्फ़ आपके बटन दबाने पर चलती है और इसी डिवाइस पर होती है। एक माइनर को 10 मिनट में एक ब्लॉक (50 MNC) मिलता है। एक बार शुरू करने पर माइनर हर 10 मिनट बाद अपने आप अगला ब्लॉक ढूँढता है, जब तक आप “रोकें” न दबाएँ। इसके लिए यह पेज खुला और स्क्रीन चालू रहनी चाहिए।</p>
+    <p class="sub">SHA-256 proof-of-work का सिमुलेशन। माइनिंग सिर्फ़ आपके बटन दबाने पर चलती है और इसी डिवाइस पर होती है। एक वॉलेट को 10 मिनट में एक ब्लॉक (50 MNC) मिलता है। एक बार शुरू करने पर माइनर हर 10 मिनट बाद अपने आप अगला ब्लॉक ढूँढता है, जब तक आप “रोकें” न दबाएँ। इसके लिए यह पेज खुला और स्क्रीन चालू रहनी चाहिए।</p>
 
     <!-- इंस्टॉल: बटन सिर्फ़ beforeinstallprompt मिलने पर दिखता है, वरना संकेत -->
     <div id="install" class="install">
@@ -197,18 +229,54 @@
       <p id="install-hint">ब्राउज़र मेनू से 'Add to Home screen' चुनें।</p>
     </div>
 
+    <section class="card wallet" aria-labelledby="wallet-title">
+      <h2 id="wallet-title">वॉलेट</h2>
+
+      <div id="wallet-none">
+        <p class="note">इनाम आपके वॉलेट के पते पर दर्ज होता है। वॉलेट इसी डिवाइस पर बनता है और यहीं रहता है।</p>
+      </div>
+
+      <div id="wallet-have" hidden>
+        <div class="wallet-label">आपका पता</div>
+        <code id="wallet-address" class="hash"></code>
+        <div class="wallet-balance"><b id="wallet-balance">—</b> MNC <small>बैलेंस (टेस्ट कॉइन, कोई मूल्य नहीं)</small></div>
+      </div>
+
+      <div class="wallet-actions">
+        <button id="btn-wallet-create" class="primary" type="button">नया वॉलेट बनाएँ</button>
+        <button id="btn-wallet-copy" type="button">पता कॉपी करें</button>
+        <button id="btn-wallet-refresh" type="button">बैलेंस ताज़ा करें</button>
+        <button id="btn-wallet-backup" type="button">बैकअप लें</button>
+        <button id="btn-wallet-restore-open" type="button">पुराना वॉलेट वापस लाएँ</button>
+      </div>
+
+      <div id="wallet-backup" class="wallet-box" hidden>
+        <p class="note">यह आपके वॉलेट का बैकअप कोड है। इसे सुरक्षित जगह रखें और किसी को न दें: जिसके पास यह कोड है, वही इस वॉलेट का मालिक है। कोड खो गया और फ़ोन बदल गया, तो वॉलेट वापस नहीं आ सकता।</p>
+        <textarea id="wallet-backup-code" rows="4" readonly aria-label="बैकअप कोड"></textarea>
+        <div class="wallet-actions">
+          <button id="btn-wallet-backup-copy" type="button">कोड कॉपी करें</button>
+          <button id="btn-wallet-backup-close" type="button">बंद करें</button>
+        </div>
+      </div>
+
+      <div id="wallet-restore" class="wallet-box" hidden>
+        <label for="wallet-restore-code">बैकअप कोड यहाँ चिपकाएँ</label>
+        <textarea id="wallet-restore-code" rows="4" autocomplete="off" autocapitalize="off" spellcheck="false"></textarea>
+        <div class="wallet-actions">
+          <button id="btn-wallet-restore" class="primary" type="button">वॉलेट वापस लाएँ</button>
+          <button id="btn-wallet-restore-cancel" type="button">रद्द करें</button>
+        </div>
+      </div>
+
+      <p id="wallet-msg" class="wallet-msg" aria-live="polite" hidden></p>
+    </section>
+
     <section class="card">
       <div class="field">
         <label for="difficulty">Difficulty
           <small>हैश की शुरुआत में ज़ीरो की संख्या</small>
         </label>
         <input id="difficulty" type="number" inputmode="numeric" step="1">
-      </div>
-      <div class="field">
-        <label for="miner-name">माइनर का नाम
-          <small>ब्लॉक भेजते समय इसी नाम पर दर्ज होगा</small>
-        </label>
-        <input id="miner-name" type="text" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
 
       <div class="actions">
@@ -250,6 +318,7 @@
     </section>
   </main>
 
+  <script src="wallet.js"></script>
   <script src="miner.js"></script>
 
   <!-- PWA: service worker रजिस्ट्रेशन और "ऐप इंस्टॉल करें" बटन -->
