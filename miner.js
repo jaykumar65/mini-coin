@@ -10,7 +10,7 @@
 (function () {
   const CONFIG = Object.assign(
     {
-      difficulty: 4, minDifficulty: 4, maxDifficulty: 7, blockData: "MNC testnet",
+      difficulty: 6, minDifficulty: 6, maxDifficulty: 7, blockData: "MNC testnet",
       supabaseUrl: "", supabaseKey: "", reward: 50,
     },
     window.MNC_CONFIG || {}
