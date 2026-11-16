@@ -7,7 +7,7 @@
 
 "use strict";
 
-const CACHE_VERSION = "v4";
+const CACHE_VERSION = "v5";
 const CACHE_PREFIX = "mnc-miner-";
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 
