@@ -12,8 +12,9 @@
   <!-- कॉन्फ़िग: डिफ़ॉल्ट difficulty यहाँ बदलें (हैश की शुरुआत में ज़ीरो की संख्या) -->
   <script>
     window.MNC_CONFIG = {
-      difficulty: 6,      // डिफ़ॉल्ट
-      minDifficulty: 6,   // सर्वर इससे कम difficulty वाला ब्लॉक नहीं लेता
+      difficulty: 5,      // डिफ़ॉल्ट
+      minDifficulty: 5,   // सर्वर इससे कम difficulty वाला ब्लॉक नहीं लेता
+      cooldownMinutes: 10, // एक माइनर को इतने मिनट में एक ही ब्लॉक (सर्वर यही लागू करता है)
       maxDifficulty: 7,
       blockData: "MNC testnet",
       reward: 50,
@@ -188,7 +189,7 @@
 
   <main>
     <h1>MNC टेस्टनेट माइनर</h1>
-    <p class="sub">SHA-256 proof-of-work का सिमुलेशन। माइनिंग सिर्फ़ आपके बटन दबाने पर चलती है और इसी डिवाइस पर होती है।</p>
+    <p class="sub">SHA-256 proof-of-work का सिमुलेशन। माइनिंग सिर्फ़ आपके बटन दबाने पर चलती है और इसी डिवाइस पर होती है। एक माइनर को 10 मिनट में एक ब्लॉक (50 MNC) मिलता है।</p>
 
     <!-- इंस्टॉल: बटन सिर्फ़ beforeinstallprompt मिलने पर दिखता है, वरना संकेत -->
     <div id="install" class="install">
@@ -239,7 +240,7 @@
         <h2>मिले हुए ब्लॉक</h2>
         <button id="btn-clear" type="button" hidden>सूची साफ़ करें</button>
       </div>
-      <p class="note">मिले ब्लॉक इस ब्राउज़र के localStorage में रखे जाते हैं और “भेजें” दबाने पर टेस्टनेट सर्वर को जाते हैं। यह केवल टेस्ट के लिए है, असली सुरक्षा नहीं है।</p>
+      <p class="note">ब्लॉक मिलते ही अपने आप टेस्टनेट सर्वर को भेजा जाता है और इस ब्राउज़र के localStorage में भी रहता है। भेजना अटक जाए तो “भेजें” दबाएँ। यह केवल टेस्ट के लिए है, असली सुरक्षा नहीं है।</p>
       <div class="send">
         <button id="btn-send" class="primary" type="button" disabled>भेजें</button>
         <p id="send-result" class="send-result" aria-live="polite" hidden></p>

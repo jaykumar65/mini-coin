@@ -1,8 +1,12 @@
 // MNC टेस्टनेट माइनर — मुख्य UI लॉजिक
 // माइनिंग सिर्फ़ यूज़र के "माइनिंग शुरू करें" दबाने पर शुरू होती है।
-// नेटवर्क कॉल सिर्फ़ दो हैं, दोनों Supabase पर:
-//   1. शुरू करते समय चेन का आख़िरी ब्लॉक पढ़ना (GET blocks)
-//   2. "भेजें" दबाने पर मिले ब्लॉक submit-block function को भेजना (POST)
+//
+// नियम: एक माइनर को 10 मिनट में एक ही ब्लॉक (50 MNC) मिलता है। इसलिए माइनर
+// एक ब्लॉक ढूँढते ही रुक जाता है और उसे अपने आप सर्वर को भेज देता है।
+//
+// नेटवर्क कॉल सिर्फ़ Supabase पर हैं:
+//   1. शुरू करते समय चेन का आख़िरी ब्लॉक और इस माइनर का पिछला इनाम पढ़ना (GET blocks)
+//   2. मिला हुआ ब्लॉक submit-block function को भेजना (POST)
 // मिले ब्लॉक localStorage में भी रहते हैं। hash की गणना worker.js में होती है।
 
 "use strict";
@@ -10,8 +14,8 @@
 (function () {
   const CONFIG = Object.assign(
     {
-      difficulty: 6, minDifficulty: 6, maxDifficulty: 7, blockData: "MNC testnet",
-      supabaseUrl: "", supabaseKey: "", reward: 50,
+      difficulty: 5, minDifficulty: 5, maxDifficulty: 7, blockData: "MNC testnet",
+      supabaseUrl: "", supabaseKey: "", reward: 50, cooldownMinutes: 10,
     },
     window.MNC_CONFIG || {}
   );
@@ -20,11 +24,15 @@
   const NAME_KEY = "mnc_miner_name";
   const GENESIS_PREV = "0".repeat(64);
   const RATE_WINDOW_MS = 2000;
+  const COOLDOWN_MS = CONFIG.cooldownMinutes * 60 * 1000;
+  const MAX_AUTO_RETRY = 5; // किसी और का ब्लॉक पहले पहुँच जाए तो इतनी बार अपने आप दोबारा माइन करे
   const API = String(CONFIG.supabaseUrl || "").replace(/\/+$/, "");
   const API_HEADERS = { apikey: CONFIG.supabaseKey, Authorization: "Bearer " + CONFIG.supabaseKey };
 
   // सर्वर के ये जवाब ब्लॉक की ग़लती नहीं हैं; ब्लॉक "भेजा नहीं गया" ही रहता है
-  const NOT_BLOCK_FAULT = ["server_error", "server_config", "too_early", "bad_miner", "method", "bad_json", "too_large"];
+  const NOT_BLOCK_FAULT = ["server_error", "server_config", "too_early", "bad_miner", "cooldown", "method", "bad_json", "too_large"];
+  // इन कारणों पर नई चेन के ऊपर दोबारा माइन करना ठीक है
+  const LOST_RACE = ["stale", "bad_prev_hash"];
 
   const $ = (id) => document.getElementById(id);
   const el = {
@@ -49,6 +57,7 @@
   let worker = null;
   let starting = false;
   let sending = false;
+  let autoRetries = 0;
   let totalTries = 0;
   let samples = [];   // हैश रेट के लिए हाल की प्रगति: {t, tries}
   let blocks = loadBlocks();
@@ -81,17 +90,28 @@
   }
 
   // ---------- Supabase ----------
-  // चेन का आख़िरी ब्लॉक; चेन खाली हो तो null
-  async function fetchTip() {
+  async function readBlocks(query) {
     if (!API || !CONFIG.supabaseKey) throw new Error("config");
-    const res = await fetch(API + "/rest/v1/blocks?select=*&order=idx.desc&limit=1", {
-      headers: API_HEADERS,
-      cache: "no-store",
-    });
+    const res = await fetch(API + "/rest/v1/blocks?" + query, { headers: API_HEADERS, cache: "no-store" });
     if (!res.ok) throw new Error("http " + res.status);
     const rows = await res.json();
     if (!Array.isArray(rows)) throw new Error("format");
+    return rows;
+  }
+
+  // चेन का आख़िरी ब्लॉक; चेन खाली हो तो null
+  async function fetchTip() {
+    const rows = await readBlocks("select=*&order=idx.desc&limit=1");
     return rows.length ? { index: Number(rows[0].idx), hash: String(rows[0].hash) } : null;
+  }
+
+  // इस माइनर को पिछला इनाम कब मिला (ms); कभी नहीं मिला तो null
+  async function fetchLastRewardTime(miner) {
+    const rows = await readBlocks(
+      "select=created_at&miner=eq." + encodeURIComponent(miner) + "&order=idx.desc&limit=1"
+    );
+    const t = rows.length ? Date.parse(rows[0].created_at) : NaN;
+    return Number.isFinite(t) ? t : null;
   }
 
   async function submitBlock(b, miner) {
@@ -134,7 +154,7 @@
         markRejected(b, "यह चेन के आख़िरी ब्लॉक से नहीं जुड़ता।");
       }
     }
-    return { chain, base };
+    return { chain, tip: tip || { index: -1, hash: GENESIS_PREV } };
   }
 
   // ---------- UI ----------
@@ -147,6 +167,13 @@
     el.sendResult.textContent = msg;
     el.sendResult.className = "send-result" + (kind ? " " + kind : "");
     el.sendResult.hidden = !msg;
+  }
+
+  const clock = (t) => new Date(t).toLocaleTimeString("hi-IN", { hour: "2-digit", minute: "2-digit" });
+
+  function waitText(ms) {
+    const s = Math.ceil(ms / 1000);
+    return Math.floor(s / 60) + " मिनट " + (s % 60) + " सेकंड";
   }
 
   function clampDifficulty(v) {
@@ -231,6 +258,7 @@
     el.start.disabled = running || starting;
     el.stop.disabled = !running;
     el.difficulty.disabled = running || starting;
+    el.minerName.disabled = running || starting;
     el.status.textContent = running
       ? "माइनिंग चल रही है…"
       : starting ? "सर्वर से आख़िरी ब्लॉक लिया जा रहा है…" : "रुका हुआ";
@@ -238,7 +266,8 @@
   }
 
   // ---------- माइनिंग ----------
-  async function start() {
+  // isRetry: किसी और का ब्लॉक पहले पहुँच जाने पर अपने आप दोबारा शुरू होना
+  async function start(isRetry) {
     if (worker || starting) return;
     showError("");
 
@@ -249,24 +278,55 @@
       return;
     }
 
+    const miner = el.minerName.value.trim();
+    if (!miner) {
+      showError("पहले माइनर का नाम लिखें; इनाम उसी नाम पर दर्ज होगा।");
+      el.minerName.focus();
+      return;
+    }
+    if (isRetry !== true) {
+      autoRetries = 0;
+      showSendResult("", "");
+    }
+
     const difficulty = clampDifficulty(el.difficulty.value);
     el.difficulty.value = difficulty;
 
-    // पहले सर्वर से चेन का आख़िरी ब्लॉक; उसी के ऊपर माइनिंग होगी
+    // पहले सर्वर से: चेन का आख़िरी ब्लॉक और इस माइनर का पिछला इनाम
     starting = true;
     setRunning(false);
-    let base;
+    let state, lastReward;
     try {
-      base = reconcile(await fetchTip()).base;
+      const got = await Promise.all([fetchTip(), fetchLastRewardTime(miner)]);
+      state = reconcile(got[0]);
+      lastReward = got[1];
     } catch (_) {
       starting = false;
       setRunning(false);
-      showError("सर्वर से चेन का आख़िरी ब्लॉक नहीं मिला, इसलिए माइनिंग शुरू नहीं हुई। इंटरनेट जाँचकर दोबारा कोशिश करें।");
+      showError("सर्वर से चेन की जानकारी नहीं मिली, इसलिए माइनिंग शुरू नहीं हुई। इंटरनेट जाँचकर दोबारा कोशिश करें।");
       return;
     }
     starting = false;
     saveBlocks();
     renderBlocks();
+
+    // 10 मिनट का अंतराल
+    const wait = lastReward === null ? 0 : lastReward + COOLDOWN_MS - Date.now();
+    if (wait > 0) {
+      setRunning(false);
+      showError(
+        "इस नाम को पिछला इनाम " + clock(lastReward) + " पर मिला था। अगला ब्लॉक " +
+        waitText(wait) + " बाद (" + clock(lastReward + COOLDOWN_MS) + " के बाद) माइन कर सकते हैं।"
+      );
+      return;
+    }
+
+    // पहले से कोई भेजने लायक ब्लॉक पड़ा हो तो नया माइन करने की जगह वही भेजें
+    if (state.chain.length) {
+      setRunning(false);
+      sendPending(true);
+      return;
+    }
 
     try {
       worker = new Worker("worker.js");
@@ -283,8 +343,8 @@
     worker.postMessage({
       type: "start",
       difficulty,
-      index: base.index + 1,
-      prevHash: base.hash,
+      index: state.tip.index + 1,
+      prevHash: state.tip.hash,
       data: CONFIG.blockData,
     });
 
@@ -310,11 +370,14 @@
       renderStats();
       renderRate();
     } else if (msg.type === "block") {
+      // 10 मिनट में एक ही ब्लॉक मिल सकता है: रुकें और इसे तुरंत भेजें
+      stop();
       msg.block.status = "pending";
       blocks.push(msg.block);
       saveBlocks();
       renderStats();
       renderBlocks();
+      sendPending(true);
     } else if (msg.type === "error") {
       stop();
       showError("माइनिंग रुकी: " + msg.message);
@@ -322,8 +385,9 @@
   }
 
   // ---------- भेजना ----------
-  // भेजे नहीं गए ब्लॉक सबसे पुराने से शुरू करके क्रम में भेजता है।
-  async function sendPending() {
+  // सबसे पुराना भेजने लायक ब्लॉक भेजता है (10 मिनट में एक ही स्वीकार होता है)।
+  // auto: ब्लॉक मिलते ही अपने आप भेजना; तब दौड़ हारने पर दोबारा माइनिंग शुरू होती है।
+  async function sendPending(auto) {
     if (sending) return;
     const miner = el.minerName.value.trim();
     if (!miner) {
@@ -334,59 +398,59 @@
 
     sending = true;
     renderSend();
-    showSendResult("", "");
+    showSendResult("ब्लॉक सर्वर को भेजा जा रहा है…", "");
 
-    const rejectedBefore = blocks.filter((b) => b.status === "rejected").length;
-    let accepted = 0;
-    let rejectedReason = "";
-    let problem = "";
+    let message = "";
+    let kind = "bad";
+    let lostRace = false;
 
     try {
       const chain = reconcile(await fetchTip()).chain;
-      for (let i = 0; i < chain.length; i++) {
-        const b = chain[i];
+      if (!chain.length) {
+        message = "भेजने लायक कोई ब्लॉक नहीं बचा; चेन आगे बढ़ चुकी है।";
+        lostRace = true;
+      } else {
+        const b = chain[0];
         const result = await submitBlock(b, miner);
         if (result.ok) {
           b.status = "accepted";
           delete b.reason;
-          accepted++;
+          kind = "ok";
+          message =
+            "सफल: ब्लॉक #" + b.index + " स्वीकार हुआ, " + CONFIG.reward + " MNC मिले। अगला ब्लॉक " +
+            clock(Date.now() + COOLDOWN_MS) + " के बाद माइन कर सकते हैं।";
+          // इसके ऊपर बने बाक़ी ब्लॉक अंतराल की वजह से नहीं जा सकते
+          for (const later of chain.slice(1)) markRejected(later, "10 मिनट में एक ही ब्लॉक स्वीकार होता है।");
         } else if (NOT_BLOCK_FAULT.includes(result.code)) {
-          problem = result.reason || "सर्वर ने ब्लॉक नहीं लिया।";
-          break;
+          message = result.reason || "सर्वर ने ब्लॉक नहीं लिया।";
         } else {
-          rejectedReason = result.reason || "सर्वर ने कारण नहीं बताया।";
-          markRejected(b, rejectedReason);
-          // इसके ऊपर बने बाक़ी ब्लॉक भी अब बेकार हैं
-          for (const later of chain.slice(i + 1)) markRejected(later, "इससे पहले वाला ब्लॉक ठुकरा दिया गया।");
-          break;
+          const reason = result.reason || "सर्वर ने कारण नहीं बताया।";
+          markRejected(b, reason);
+          for (const later of chain.slice(1)) markRejected(later, "इससे पहले वाला ब्लॉक ठुकरा दिया गया।");
+          message = "ब्लॉक ठुकराया गया: " + reason;
+          lostRace = LOST_RACE.includes(result.code);
         }
-        saveBlocks();
-        renderBlocks();
       }
     } catch (_) {
-      problem = "सर्वर से संपर्क नहीं हो सका। इंटरनेट जाँचकर दोबारा “भेजें” दबाएँ।";
+      message = "सर्वर से संपर्क नहीं हो सका। इंटरनेट जाँचकर “भेजें” दबाएँ।";
     }
 
     sending = false;
     saveBlocks();
     renderBlocks();
 
-    // इस बार कोई ब्लॉक पुराना/गलत निकला हो तो उसके ऊपर माइनिंग जारी रखना बेकार है
-    const newlyRejected = blocks.filter((b) => b.status === "rejected").length > rejectedBefore;
-    if (newlyRejected && worker) stop();
-
-    const done = accepted ? fmt.format(accepted) + " ब्लॉक स्वीकार हुए। " : "";
-    if (!rejectedReason && !problem && newlyRejected && accepted) {
-      showSendResult(done + "कुछ ब्लॉक पुराने या गलत निकले। नई चेन पर माइनिंग के लिए दोबारा “माइनिंग शुरू करें” दबाएँ।", "ok");
-    } else if (rejectedReason) {
-      showSendResult(done + "ब्लॉक ठुकराया गया: " + rejectedReason + " नई चेन पर माइनिंग के लिए दोबारा “माइनिंग शुरू करें” दबाएँ।", "bad");
-    } else if (problem) {
-      showSendResult(done + problem, "bad");
-    } else if (accepted) {
-      showSendResult("सफल: " + done.trim(), "ok");
-    } else {
-      showSendResult("भेजने लायक कोई ब्लॉक नहीं था; बचे हुए ब्लॉक पुराने या गलत निकले।", "bad");
+    // किसी और का ब्लॉक पहले पहुँच गया: नई चेन के ऊपर अपने आप दोबारा कोशिश
+    if (auto === true && lostRace && autoRetries < MAX_AUTO_RETRY) {
+      autoRetries++;
+      showSendResult(
+        "किसी और का ब्लॉक पहले पहुँच गया। नई चेन पर दोबारा माइनिंग हो रही है (कोशिश " +
+        autoRetries + "/" + MAX_AUTO_RETRY + ")।", "bad"
+      );
+      start(true);
+      return;
     }
+    if (lostRace) message += " दोबारा “माइनिंग शुरू करें” दबाएँ।";
+    showSendResult(message, kind);
   }
 
   // ---------- शुरुआत ----------
@@ -402,9 +466,9 @@
     try { localStorage.setItem(NAME_KEY, el.minerName.value.trim()); } catch (_) {}
   });
 
-  el.start.addEventListener("click", start);
+  el.start.addEventListener("click", () => start(false));
   el.stop.addEventListener("click", stop);
-  el.send.addEventListener("click", sendPending);
+  el.send.addEventListener("click", () => sendPending(false));
   el.clear.addEventListener("click", () => {
     if (!confirm("सेव किए गए सभी टेस्ट ब्लॉक मिटा दें?")) return;
     stop();
