@@ -13,9 +13,14 @@
   <script>
     window.MNC_CONFIG = {
       difficulty: 4,      // डिफ़ॉल्ट
-      minDifficulty: 1,
+      minDifficulty: 4,   // सर्वर इससे कम difficulty वाला ब्लॉक नहीं लेता
       maxDifficulty: 7,
-      blockData: "MNC testnet"
+      blockData: "MNC testnet",
+      reward: 50,
+
+      // Supabase: सिर्फ़ सार्वजनिक (publishable) key। Secret / service_role key यहाँ कभी न डालें।
+      supabaseUrl: "https://gaddknalbfgzilndmfyf.supabase.co",
+      supabaseKey: "sb_publishable_OUFXENQa8Rl6NR_StPFpKg_dP7vnHOB"
     };
   </script>
 
@@ -90,6 +95,17 @@
       border-radius: 10px;
     }
     .field input:disabled { opacity: 0.5; }
+    .field + .field { margin-top: 12px; }
+    .field input[type="text"] { width: 160px; font-size: 1rem; text-align: left; padding: 0 12px; }
+
+    .send { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; }
+    .send button { min-height: 44px; padding: 0 18px; }
+    .send-result { margin: 0; font-size: 0.9rem; flex: 1 1 200px; }
+    .send-result.ok { color: var(--ok); }
+    .send-result.bad { color: var(--warn-text); }
+    .block-state { margin-top: 4px; font-size: 0.82rem; color: var(--muted); }
+    .block-state.ok { color: var(--ok); }
+    .block-state.bad { color: var(--warn-text); }
 
     .actions { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 16px; }
     button {
@@ -172,7 +188,7 @@
 
   <main>
     <h1>MNC टेस्टनेट माइनर</h1>
-    <p class="sub">SHA-256 proof-of-work का सिमुलेशन। माइनिंग सिर्फ़ आपके बटन दबाने पर चलती है और पूरी तरह इसी डिवाइस पर होती है।</p>
+    <p class="sub">SHA-256 proof-of-work का सिमुलेशन। माइनिंग सिर्फ़ आपके बटन दबाने पर चलती है और इसी डिवाइस पर होती है।</p>
 
     <!-- इंस्टॉल: बटन सिर्फ़ beforeinstallprompt मिलने पर दिखता है, वरना संकेत -->
     <div id="install" class="install">
@@ -186,6 +202,12 @@
           <small>हैश की शुरुआत में ज़ीरो की संख्या</small>
         </label>
         <input id="difficulty" type="number" inputmode="numeric" step="1">
+      </div>
+      <div class="field">
+        <label for="miner-name">माइनर का नाम
+          <small>ब्लॉक भेजते समय इसी नाम पर दर्ज होगा</small>
+        </label>
+        <input id="miner-name" type="text" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false">
       </div>
 
       <div class="actions">
@@ -217,7 +239,11 @@
         <h2>मिले हुए ब्लॉक</h2>
         <button id="btn-clear" type="button" hidden>सूची साफ़ करें</button>
       </div>
-      <p class="note">ये ब्लॉक सिर्फ़ इस ब्राउज़र के localStorage में रखे जाते हैं। यह केवल टेस्ट के लिए है, असली सुरक्षा नहीं है — इन्हें कोई भी बदल या मिटा सकता है।</p>
+      <p class="note">मिले ब्लॉक इस ब्राउज़र के localStorage में रखे जाते हैं और “भेजें” दबाने पर टेस्टनेट सर्वर को जाते हैं। यह केवल टेस्ट के लिए है, असली सुरक्षा नहीं है।</p>
+      <div class="send">
+        <button id="btn-send" class="primary" type="button" disabled>भेजें</button>
+        <p id="send-result" class="send-result" aria-live="polite" hidden></p>
+      </div>
       <p id="block-empty" class="empty">अभी तक कोई ब्लॉक नहीं मिला।</p>
       <ul id="block-list"></ul>
     </section>
