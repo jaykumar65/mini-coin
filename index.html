@@ -151,6 +151,15 @@
     button:disabled { opacity: 0.4; cursor: default; }
     button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
+    .gate {
+      margin: 14px 0 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
+      color: var(--warn-text);
+      font-size: 0.95rem;
+    }
+
     .status { margin: 14px 0 0; color: var(--muted); font-size: 0.95rem; }
     .status::before {
       content: "";
@@ -224,8 +233,8 @@
       <p id="install-hint">ब्राउज़र मेनू से 'Add to Home screen' चुनें।</p>
     </div>
 
-    <!-- वॉलेट की पट्टी: पूरा वॉलेट wallet.html पर है -->
-    <a id="wallet-bar" class="wallet-bar" href="wallet">
+    <!-- वॉलेट की पट्टी: वॉलेट एक अलग ऐप है (wallet/ फ़ोल्डर) -->
+    <a id="wallet-bar" class="wallet-bar" href="wallet/">
       <span class="wallet-bar-coin" aria-hidden="true">M</span>
       <span class="wallet-bar-text">
         <b id="wallet-bar-title">वॉलेट बनाएँ</b>
@@ -241,6 +250,9 @@
         </label>
         <input id="difficulty" type="number" inputmode="numeric" step="1">
       </div>
+
+      <!-- माइनिंग सिर्फ़ सक्रिय वॉलेट से; वरना यहाँ कारण दिखता है और बटन बंद रहता है -->
+      <p id="wallet-gate" class="gate" role="status" hidden></p>
 
       <div class="actions">
         <button id="btn-start" class="primary" type="button">माइनिंग शुरू करें</button>

@@ -8,6 +8,10 @@
 // नेटवर्क कॉल सिर्फ़ Supabase पर हैं:
 //   1. शुरू करते समय चेन का आख़िरी ब्लॉक और इस माइनर का पिछला इनाम पढ़ना (GET blocks)
 //   2. मिला हुआ ब्लॉक submit-block function को भेजना (POST)
+//   3. वॉलेट सक्रिय है या नहीं, यह wallet-status function से पूछना (GET)
+//
+// वॉलेट: पता वॉलेट ऐप (wallet/) के localStorage से आता है, सिर्फ़ सार्वजनिक पता।
+// "माइनिंग शुरू करें" तभी चालू होता है जब सर्वर उस पते को active बताए।
 // मिले ब्लॉक localStorage में भी रहते हैं। hash की गणना worker.js में होती है।
 
 "use strict";
@@ -31,7 +35,7 @@
   const API_HEADERS = { apikey: CONFIG.supabaseKey, Authorization: "Bearer " + CONFIG.supabaseKey };
 
   // सर्वर के ये जवाब ब्लॉक की ग़लती नहीं हैं; ब्लॉक "भेजा नहीं गया" ही रहता है
-  const NOT_BLOCK_FAULT = ["server_error", "server_config", "too_early", "bad_miner", "cooldown", "method", "bad_json", "too_large"];
+  const NOT_BLOCK_FAULT = ["server_error", "server_config", "too_early", "bad_miner", "cooldown", "method", "bad_json", "too_large", "wallet_inactive"];
   // इन कारणों पर नई चेन के ऊपर दोबारा माइन करना ठीक है
   const LOST_RACE = ["stale", "bad_prev_hash"];
 
@@ -50,14 +54,16 @@
     list: $("block-list"),
     empty: $("block-empty"),
     error: $("error"),
+    gate: $("wallet-gate"),
   };
 
   const fmt = new Intl.NumberFormat("en-IN");
 
-  // इनाम किस पते पर दर्ज हो: वॉलेट का पता (wallet.html पर बना, localStorage में); वॉलेट न हो तो ""
+  // इनाम किस पते पर दर्ज हो: वॉलेट ऐप (wallet/) का सार्वजनिक पता; वॉलेट न हो तो ""।
+  // यहाँ सिर्फ़ पता पढ़ा जाता है; कुंजी या PIN से माइनर का कोई लेना-देना नहीं।
   function minerAddress() {
     try {
-      const w = JSON.parse(localStorage.getItem("mnc_wallet") || "null");
+      const w = JSON.parse(localStorage.getItem("mnc_wallet_pub") || "null");
       return w && /^MNC[0-9a-f]{40}$/.test(w.address) ? w.address : "";
     } catch (_) {
       return "";
@@ -75,6 +81,8 @@
   let totalTries = 0;
   let samples = [];   // हैश रेट के लिए हाल की प्रगति: {t, tries}
   let blocks = loadBlocks();
+  // वॉलेट की स्थिति: "none" (वॉलेट नहीं), "loading", "active", "revoked", "not_found", "unknown"
+  let walletStatus = "loading";
 
   // ---------- localStorage ----------
   function loadBlocks() {
@@ -172,6 +180,38 @@
       }
     }
     return { chain, tip: tip || { index: -1, hash: GENESIS_PREV } };
+  }
+
+  // ---------- वॉलेट की स्थिति ----------
+  const GATE_TEXT = {
+    none: "पहले वॉलेट बनाएँ। ऊपर “वॉलेट” दबाएँ; माइनिंग उसके बाद चालू होगी।",
+    loading: "वॉलेट की स्थिति जाँची जा रही है…",
+    revoked: "यह वॉलेट रद्द कर दिया गया है, इसलिए इससे माइनिंग नहीं हो सकती।",
+    not_found: "यह वॉलेट अभी सक्रिय नहीं है। ऊपर “वॉलेट” खोलकर इनवाइट कोड से रजिस्टर करें।",
+    unknown: "वॉलेट की स्थिति नहीं मिल सकी। इंटरनेट जाँचें; पेज पर लौटते ही दोबारा जाँच होगी।",
+  };
+
+  // सर्वर से पूछना कि यह पता सक्रिय है या नहीं (wallets टेबल publishable key से नहीं पढ़ी जा सकती)
+  async function checkWallet() {
+    const address = minerAddress();
+    if (!address) {
+      walletStatus = "none";
+      renderState();
+      return;
+    }
+    if (walletStatus !== "active") walletStatus = "loading";
+    renderState();
+    let next = "unknown";
+    try {
+      const res = await fetch(API + "/functions/v1/wallet-status?address=" + encodeURIComponent(address), {
+        headers: API_HEADERS, cache: "no-store",
+      });
+      const body = await res.json();
+      if (body && body.ok && ["active", "revoked", "not_found"].includes(body.status)) next = body.status;
+    } catch (_) { /* इंटरनेट नहीं: "unknown" */ }
+    if (minerAddress() !== address) return checkWallet(); // बीच में वॉलेट बदल गया
+    walletStatus = next;
+    renderState();
   }
 
   // ---------- UI ----------
@@ -273,8 +313,10 @@
 
   // स्थिति की पंक्ति और बटन; सब कुछ ऊपर के स्थिति-चरों से निकलता है
   function renderState() {
-    el.start.disabled = active;
+    el.start.disabled = active || walletStatus !== "active";
     el.stop.disabled = !active;
+    el.gate.textContent = GATE_TEXT[walletStatus] || "";
+    el.gate.hidden = walletStatus === "active";
     el.difficulty.disabled = active;
 
     let text = "रुका हुआ";
@@ -313,7 +355,7 @@
   // "माइनिंग शुरू करें" एक बार दबाने पर माइनर तब तक चालू रहता है जब तक "रोकें" न दबे:
   //   ब्लॉक ढूँढो -> भेजो -> 10 मिनट इंतज़ार -> फिर ढूँढो ...
   function start() {
-    if (active) return;
+    if (active || walletStatus !== "active") return;
     showError("");
 
     if (!window.Worker || !window.crypto || !window.crypto.subtle) {
@@ -323,7 +365,7 @@
       return;
     }
     if (!minerAddress()) {
-      showError("पहले ऊपर “वॉलेट” खोलकर वॉलेट बनाएँ या वापस लाएँ; इनाम उसी के पते पर दर्ज होगा।");
+      showError("पहले वॉलेट बनाएँ; इनाम उसी के पते पर दर्ज होगा।");
       return;
     }
 
@@ -464,7 +506,7 @@
     if (sending) return;
     const miner = minerAddress();
     if (!miner) {
-      showSendResult("पहले ऊपर “वॉलेट” खोलकर वॉलेट बनाएँ या वापस लाएँ।", "bad");
+      showSendResult("पहले वॉलेट बनाएँ।", "bad");
       return;
     }
 
@@ -495,6 +537,10 @@
           outcome = "cooldown";
           message = result.reason || "अभी 10 मिनट पूरे नहीं हुए।";
           if (Number(result.retry_after_s) > 0) retryMs = Number(result.retry_after_s) * 1000;
+        } else if (result.code === "wallet_inactive") {
+          // वॉलेट सक्रिय नहीं रहा: माइनर रोकें, वरना वह बार-बार बेकार कोशिश करता रहेगा
+          outcome = "inactive";
+          message = result.reason || "यह वॉलेट सक्रिय नहीं है।";
         } else if (NOT_BLOCK_FAULT.includes(result.code)) {
           message = result.reason || "सर्वर ने ब्लॉक नहीं लिया।";
         } else {
@@ -514,6 +560,13 @@
     sending = false;
     saveBlocks();
     renderBlocks();
+
+    if (outcome === "inactive") {
+      stop();
+      showSendResult(message, "bad");
+      checkWallet();
+      return;
+    }
 
     if (!active) {
       // माइनर बंद है: सिर्फ़ नतीजा दिखाएँ
@@ -548,7 +601,7 @@
   }
 
   // ---------- वॉलेट की पट्टी ----------
-  // छोटा पता और बैलेंस; पूरा वॉलेट wallet.html पर खुलता है
+  // छोटा पता और बैलेंस; वॉलेट ऐप wallet/ पर खुलता है
   async function renderWalletBar() {
     const title = $("wallet-bar-title"), sub = $("wallet-bar-sub");
     const address = minerAddress();
@@ -603,9 +656,14 @@
 
   setInterval(tick, 1000);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && active) {
+    if (document.visibilityState !== "visible") return;
+    if (active) {
       holdScreen(); // स्क्रीन-लॉक ऐप के पीछे जाने पर छूट जाता है
       tick();
+    } else {
+      // वॉलेट ऐप से लौटने पर: नया वॉलेट / नई स्थिति उठाएँ
+      renderWalletBar();
+      checkWallet();
     }
   });
 
@@ -613,4 +671,5 @@
   renderStats();
   renderBlocks();
   renderWalletBar();
+  checkWallet();
 })();
