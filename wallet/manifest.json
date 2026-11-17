@@ -1,7 +1,7 @@
 {
-  "name": "MNC Wallet (TESTNET)",
-  "short_name": "MNC Wallet",
-  "description": "MNC टेस्टनेट का वॉलेट। यह टेस्टनेट है, इसका कोई मूल्य नहीं।",
+  "name": "MNC Miner Wallet (TESTNET)",
+  "short_name": "MNC Miner Wallet",
+  "description": "MNC टेस्टनेट का माइनिंग वॉलेट। यह टेस्टनेट है, इसका कोई मूल्य नहीं।",
   "lang": "hi",
   "start_url": "./",
   "scope": "./",

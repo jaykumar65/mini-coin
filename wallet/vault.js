@@ -187,9 +187,39 @@
     return bytesToBase64(new Uint8Array(await subtle.sign(SIGN, key, enc.encode(message))));
   }
 
+  // माइनिंग सत्र के लिए संदेश। सर्वर (supabase/functions/mining-session) यही रूप जाँचता है।
+  function mineMessage(address, ts) {
+    return "MNC-MINE-V1|" + address + "|" + ts;
+  }
+
+  // ---------- MNC भेजना ----------
+  // संदेश सर्वर (supabase/functions/transfer) जैसा ही। रकम और फ़ीस पूर्णांक इकाई (units) में।
+  function transferMessage(from, to, amountUnits, feeUnits, seq) {
+    return "MNC-TRANSFER-V2|" + from + "|" + to + "|" + amountUnits + "|" + feeUnits + "|" + seq;
+  }
+
+  function toB64url(bytes) {
+    return bytesToBase64(bytes).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  }
+
+  // transfer function के लिए: { pub_x, pub_y, sig (hex) }। PIN गलत हो तो code वाला Error।
+  async function signTransfer(storage, pin, to, amountUnits, feeUnits, seq, now) {
+    const pub = readPublic(storage);
+    if (!pub) throw fail("no_wallet", "इस डिवाइस पर कोई वॉलेट नहीं है।");
+    const raw = base64ToBytes(pub.publicKey); // 04 || x || y
+    const key = await unlock(storage, pin, now);
+    const message = enc.encode(transferMessage(pub.address, to, String(amountUnits), String(feeUnits), seq));
+    return {
+      pub_x: toB64url(raw.slice(1, 33)),
+      pub_y: toB64url(raw.slice(33, 65)),
+      sig: toHex(new Uint8Array(await subtle.sign(SIGN, key, message))),
+    };
+  }
+
   root.MNCVault = {
     PUB_KEY, MAX_FAILS, LOCK_MS, PBKDF2_ITERATIONS,
     readPublic, createWallet, removeWallet, lockState, sign,
+    mineMessage, transferMessage, signTransfer,
     deriveAddress, toHex, bytesToBase64, base64ToBytes,
   };
 })(typeof globalThis !== "undefined" ? globalThis : self);
