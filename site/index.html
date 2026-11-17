@@ -4,7 +4,20 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#14161c">
-  <title>MNC टेस्टनेट रिकॉर्ड</title>
+  <title>MNC टेस्टनेट माइनर</title>
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+  <!-- Supabase: सिर्फ़ सार्वजनिक (publishable) key। Secret / service_role key यहाँ कभी न डालें।
+       माइनिंग की संख्याएँ (राउंड, इनाम) config/chain.json में हैं। -->
+  <script>
+    window.MNC_CONFIG = {
+      supabaseUrl: "https://gaddknalbfgzilndmfyf.supabase.co",
+      supabaseKey: "sb_publishable_OUFXENQa8Rl6NR_StPFpKg_dP7vnHOB"
+    };
+  </script>
+
   <style>
     :root {
       --bg: #14161c;
@@ -13,10 +26,10 @@
       --text: #eceef3;
       --muted: #9aa3b5;
       --accent: #f5b942;
+      --accent-ink: #1b1400;
       --warn-bg: #5a2a12;
       --warn-text: #ffd9b8;
       --ok: #5ad19a;
-      --bad: #ff8f7a;
     }
     * { box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
@@ -40,30 +53,18 @@
     }
 
     main {
-      max-width: 960px;
+      max-width: 560px;
       margin: 0 auto;
       padding: 20px 16px calc(32px + env(safe-area-inset-bottom));
     }
 
-    .top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
     h1 { font-size: 1.4rem; margin: 0 0 4px; }
-    h2 { font-size: 1.05rem; margin: 0 0 10px; }
+    h2 { font-size: 1.05rem; margin: 0; }
     .sub { color: var(--muted); margin: 0 0 20px; font-size: 0.95rem; }
 
-    button {
-      min-height: 44px;
-      padding: 0 16px;
-      font: inherit;
-      font-weight: 600;
-      font-size: 0.9rem;
-      border-radius: 12px;
-      border: 1px solid var(--line);
-      background: transparent;
-      color: var(--text);
-      cursor: pointer;
-    }
-    button:disabled { opacity: 0.4; cursor: default; }
-    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .install { margin: -8px 0 16px; }
+    .install button { min-height: 44px; padding: 0 16px; font-weight: 600; font-size: 0.9rem; }
+    .install p { margin: 0; color: var(--muted); font-size: 0.85rem; }
 
     .card {
       background: var(--card);
@@ -73,38 +74,170 @@
       margin-bottom: 16px;
     }
 
-    .msg { color: var(--muted); margin: 0 0 16px; }
-    .error {
-      margin: 0 0 16px;
+    .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .field label { font-weight: 600; }
+    .field small { display: block; color: var(--muted); font-weight: 400; }
+    .field input {
+      width: 84px;
+      min-height: 48px;
+      font: inherit;
+      font-size: 1.1rem;
+      text-align: center;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .field input:disabled { opacity: 0.5; }
+    .field + .field { margin-top: 12px; }
+    .field input[type="text"] { width: 160px; font-size: 1rem; text-align: left; padding: 0 12px; }
+
+    .wallet-bar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
       padding: 12px 14px;
+      margin-bottom: 16px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      color: var(--text);
+      text-decoration: none;
+    }
+    .wallet-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .wallet-bar-coin {
+      display: grid;
+      place-items: center;
+      width: 40px; height: 40px;
+      flex: none;
+      border-radius: 50%;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font-weight: 800;
+    }
+    .wallet-bar-text { flex: 1; min-width: 0; }
+    .wallet-bar-text b { display: block; font-variant-numeric: tabular-nums; }
+    .wallet-bar-text small { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .wallet-bar-go { color: var(--muted); font-size: 1.6rem; }
+
+    .send { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; }
+    .send button { min-height: 44px; padding: 0 18px; }
+    .send-result { margin: 0; font-size: 0.9rem; flex: 1 1 200px; }
+    .send-result.ok { color: var(--ok); }
+    .send-result.bad { color: var(--warn-text); }
+    .block-state { margin-top: 4px; font-size: 0.82rem; color: var(--muted); }
+    .block-state.ok { color: var(--ok); }
+    .block-state.bad { color: var(--warn-text); }
+
+    .actions { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 16px; }
+    button {
+      min-height: 52px;
+      font: inherit;
+      font-weight: 700;
       border-radius: 12px;
-      background: var(--warn-bg);
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+    button:disabled { opacity: 0.4; cursor: default; }
+    button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .gate {
+      margin: 14px 0 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      border: 1px solid var(--line);
       color: var(--warn-text);
+      font-size: 0.95rem;
     }
 
-    .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 16px; }
-    .stat { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 12px; text-align: center; min-width: 0; }
-    .stat .num { font-size: 1.25rem; font-weight: 700; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+    .status { margin: 14px 0 0; color: var(--muted); font-size: 0.95rem; }
+    .status::before {
+      content: "";
+      display: inline-block;
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--muted);
+      margin-right: 8px;
+    }
+    .status.on { color: var(--ok); }
+    .status.on::before { background: var(--ok); }
+
+    .error {
+      margin: 14px 0 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--warn-bg);
+      color: var(--warn-text);
+      font-size: 0.95rem;
+    }
+
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
+    .stat {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 12px 8px;
+      text-align: center;
+      min-width: 0;
+    }
+    .stat .num {
+      font-size: 1.25rem;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      overflow-wrap: anywhere;
+    }
     .stat .label { color: var(--muted); font-size: 0.8rem; }
+    .stat .label span { display: block; opacity: 0.8; }
 
-    .chain { font-weight: 700; margin: 0 0 4px; }
-    .chain.ok { color: var(--ok); }
-    .chain.bad { color: var(--bad); }
-    .detail { color: var(--muted); font-size: 0.9rem; margin: 0; }
+    .list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+    .list-head button { min-height: 40px; padding: 0 12px; font-weight: 600; font-size: 0.85rem; }
+    .note { color: var(--muted); font-size: 0.85rem; margin: 8px 0 12px; }
 
-    .scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-    th, td { padding: 8px 10px; text-align: left; border-top: 1px solid var(--line); white-space: nowrap; }
-    th { color: var(--muted); font-weight: 600; border-top: 0; }
-    td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
-    td.mono { font-family: ui-monospace, Consolas, monospace; }
-    td.addr { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
-    td.state { white-space: normal; min-width: 140px; color: var(--muted); }
-    td.state.ok { color: var(--ok); }
-    td.state.bad { color: var(--bad); }
-    tr.bad td { opacity: 0.75; }
-    .empty { color: var(--muted); margin: 0; }
-    .note { color: var(--muted); font-size: 0.85rem; margin: 0 0 12px; }
+    ul { list-style: none; margin: 0; padding: 0; }
+    .block { border-top: 1px solid var(--line); padding: 12px 0; }
+    .block-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+    .block-head span, .block-meta { color: var(--muted); font-size: 0.82rem; }
+    .hash {
+      display: block;
+      margin: 6px 0;
+      font-family: ui-monospace, Consolas, monospace;
+      font-size: 0.8rem;
+      overflow-wrap: anywhere;
+    }
+    .hash b { color: var(--accent); }
+    .empty { color: var(--muted); margin: 0; padding: 8px 0; }
+
+    .pin-box { margin-top: 14px; }
+    .pin-box label { display: block; font-weight: 600; margin-bottom: 6px; }
+    .pin-box input {
+      width: 100%;
+      min-height: 52px;
+      padding: 0 14px;
+      font: inherit;
+      font-size: 1.15rem;
+      letter-spacing: 0.12em;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .pin-box small { display: block; color: var(--muted); margin-top: 6px; }
+
+    .round-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .round-left { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .bar { height: 10px; margin: 10px 0 12px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); overflow: hidden; }
+    .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.9s linear; }
+    .slots { display: flex; gap: 8px; margin-bottom: 10px; }
+    .slot { flex: 1; height: 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); }
+    .slot.on { background: var(--ok); border-color: var(--ok); }
+
+    .reward { border-top: 1px solid var(--line); padding: 10px 0; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .reward b { color: var(--ok); font-variant-numeric: tabular-nums; }
+    .reward span { color: var(--muted); font-size: 0.85rem; }
 
     [hidden] { display: none !important; }
   </style>
@@ -113,81 +246,131 @@
   <div class="banner" role="note">⚠ यह टेस्टनेट है, इसका कोई मूल्य नहीं।</div>
 
   <main>
-    <div class="top">
-      <div>
-        <h1>MNC टेस्टनेट रिकॉर्ड</h1>
-        <p class="sub">दर्ज हुए ब्लॉक, लेन-देन, बैलेंस और चेन की जाँच।</p>
+    <h1>MNC टेस्टनेट माइनर</h1>
+    <p class="sub">माइनिंग 3-3 मिनट के राउंड में होती है। हर राउंड का इनाम (50 MNC) उन सब में बराबर बँटता है जो पूरे 3 मिनट माइनर चालू रखकर मौजूद रहे, चाहे फ़ोन से हों या लैपटॉप से। तेज़ फ़ोन का कोई अलग फ़ायदा नहीं। इसके लिए यह पेज खुला और स्क्रीन चालू रहनी चाहिए।</p>
+
+    <!-- इंस्टॉल: बटन सिर्फ़ beforeinstallprompt मिलने पर दिखता है, वरना संकेत -->
+    <div id="install" class="install">
+      <button id="btn-install" type="button" hidden>ऐप इंस्टॉल करें</button>
+      <p id="install-hint">ब्राउज़र मेनू से 'Add to Home screen' चुनें।</p>
+    </div>
+
+    <!-- वॉलेट की पट्टी: माइनर वॉलेट एक अलग ऐप है (wallet/ फ़ोल्डर) -->
+    <a id="wallet-bar" class="wallet-bar" href="wallet/">
+      <span class="wallet-bar-coin" aria-hidden="true">M</span>
+      <span class="wallet-bar-text">
+        <b id="wallet-bar-title">वॉलेट बनाएँ</b>
+        <small id="wallet-bar-sub">माइनिंग का इनाम माइनर वॉलेट के पते पर आता है</small>
+      </span>
+      <span class="wallet-bar-go" aria-hidden="true">›</span>
+    </a>
+
+    <section class="card">
+      <!-- माइनिंग सिर्फ़ सक्रिय वॉलेट से; वरना यहाँ कारण दिखता है और बटन बंद रहता है -->
+      <p id="wallet-gate" class="gate" role="status" hidden></p>
+
+      <!-- सत्र न हो तो PIN (हस्ताक्षर इसी फ़ोन पर होता है; PIN कहीं नहीं जाता) -->
+      <div id="pin-box" class="pin-box" hidden>
+        <label for="mine-pin">माइनर वॉलेट का PIN (6 अंक)</label>
+        <input id="mine-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" pattern="\d{6}">
+        <small>एक बार डालने पर 12 घंटे तक दोबारा नहीं पूछा जाएगा। यह PIN सिर्फ़ इस फ़ोन की सुरक्षा के लिए है, असली सुरक्षा सर्वर पर है।</small>
       </div>
-      <button id="btn-reload" type="button">फिर से लोड करें</button>
-    </div>
 
-    <p id="loading" class="msg" aria-live="polite">रिकॉर्ड लोड हो रहे हैं…</p>
-    <p id="error" class="error" role="alert" hidden></p>
+      <div class="actions">
+        <button id="btn-start" class="primary" type="button" disabled>माइनिंग शुरू करें</button>
+        <button id="btn-stop" type="button" disabled>रोकें</button>
+      </div>
 
-    <div id="content" hidden>
-      <section class="stats" aria-label="सारांश">
-        <div class="stat">
-          <div id="stat-count" class="num">0</div>
-          <div class="label">कुल ब्लॉक</div>
-        </div>
-        <div class="stat">
-          <div id="stat-supply" class="num">0 MNC</div>
-          <div class="label">कुल बाँटे गए टेस्ट कॉइन</div>
-        </div>
-      </section>
+      <p id="status" class="status" aria-live="polite">रुका हुआ</p>
+      <p id="error" class="error" role="alert" hidden></p>
+    </section>
 
-      <section class="card">
-        <h2>चेन की जाँच</h2>
-        <p id="chain-status" class="chain"></p>
-        <p id="chain-detail" class="detail"></p>
-      </section>
+    <section class="card" aria-label="चल रहा राउंड">
+      <div class="round-head">
+        <h2>चल रहा राउंड</h2>
+        <span><span id="round-left" class="round-left">—</span> <small class="note">बाक़ी</small></span>
+      </div>
+      <div class="bar"><span id="round-bar"></span></div>
+      <div id="slots" class="slots" aria-label="इस राउंड में आपके संकेत"></div>
+      <p id="round-note" class="note"></p>
+    </section>
 
-      <section class="card">
-        <h2>बैलेंस</h2>
-        <p class="note">ये टेस्ट कॉइन हैं; इनका कोई मूल्य नहीं और इन्हें कहीं भुनाया नहीं जा सकता।</p>
-        <p id="balances-empty" class="empty">अभी कोई बैलेंस नहीं।</p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr><th>पता</th><th class="num">माइन किए ब्लॉक</th><th class="num">बैलेंस (MNC)</th></tr>
-            </thead>
-            <tbody id="balances"></tbody>
-          </table>
-        </div>
-      </section>
+    <section class="stats" aria-label="आँकड़े">
+      <div class="stat">
+        <div id="stat-people" class="num">—</div>
+        <div class="label">पिछले राउंड में <span>हिस्सेदार</span></div>
+      </div>
+      <div class="stat">
+        <div id="stat-share" class="num">—</div>
+        <div class="label">हर एक को <span>(MNC)</span></div>
+      </div>
+      <div class="stat">
+        <div id="stat-total" class="num">—</div>
+        <div class="label">आपकी कुल कमाई <span>(राउंड से, MNC)</span></div>
+      </div>
+    </section>
 
-      <section class="card">
-        <h2>लेन-देन</h2>
-        <p id="transfers-empty" class="empty">अभी तक कोई लेन-देन नहीं हुआ।</p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr><th class="num">नंबर</th><th>किसने भेजा</th><th>किसे मिला</th><th class="num">राशि (MNC)</th><th>समय</th></tr>
-            </thead>
-            <tbody id="transfers"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="card">
-        <h2>ब्लॉक</h2>
-        <p id="blocks-empty" class="empty">अभी तक कोई ब्लॉक दर्ज नहीं हुआ।</p>
-        <div class="scroll">
-          <table>
-            <thead>
-              <tr>
-                <th class="num">नंबर</th><th>hash</th><th>prev_hash</th><th class="num">nonce</th>
-                <th class="num">difficulty</th><th>माइनर</th><th>समय</th><th>जाँच</th>
-              </tr>
-            </thead>
-            <tbody id="blocks"></tbody>
-          </table>
-        </div>
-      </section>
-    </div>
+    <section class="card">
+      <h2>आपके हाल के इनाम</h2>
+      <p class="note">इनाम आपके माइनर वॉलेट में आता है। उसे खर्च करने या किसी को देने के लिए माइनर वॉलेट से अपने <a href="pay/" style="color:var(--accent)">MNC Pay वॉलेट</a> में भेजें।</p>
+      <p id="reward-empty" class="empty">अभी तक कोई इनाम नहीं मिला।</p>
+      <ul id="reward-list"></ul>
+    </section>
   </main>
 
-  <script src="config.js"></script>
-  <script src="site.js"></script>
+  <script src="config/units.js"></script>
+  <script src="wallet/vault.js"></script>
+  <script src="miner.js"></script>
+
+  <!-- PWA: service worker रजिस्ट्रेशन और "ऐप इंस्टॉल करें" बटन -->
+  <script>
+    (function () {
+      "use strict";
+
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", function () {
+          navigator.serviceWorker.register("sw.js").catch(function () {
+            /* रजिस्टर न हो (जैसे file:// पर) तो भी माइनर सामान्य रूप से चले */
+          });
+        });
+      }
+
+      var box = document.getElementById("install");
+      var button = document.getElementById("btn-install");
+      var hint = document.getElementById("install-hint");
+      var deferredPrompt = null;
+
+      var standalone =
+        window.matchMedia("(display-mode: standalone)").matches ||
+        window.navigator.standalone === true;
+      if (standalone) {
+        box.hidden = true; // पहले से ऐप की तरह खुला है
+        return;
+      }
+
+      window.addEventListener("beforeinstallprompt", function (e) {
+        e.preventDefault();
+        deferredPrompt = e;
+        button.hidden = false;
+        hint.hidden = true;
+      });
+
+      button.addEventListener("click", function () {
+        if (!deferredPrompt) return;
+        var prompt = deferredPrompt;
+        deferredPrompt = null;
+        button.hidden = true;
+        prompt.prompt();
+        prompt.userChoice.then(function (choice) {
+          if (choice.outcome !== "accepted") hint.hidden = false;
+        });
+      });
+
+      window.addEventListener("appinstalled", function () {
+        deferredPrompt = null;
+        box.hidden = true;
+      });
+    })();
+  </script>
 </body>
 </html>
