@@ -10,7 +10,7 @@
 
 "use strict";
 
-const CACHE_VERSION = "v5";
+const CACHE_VERSION = "v6";
 const CACHE_PREFIX = "mnc-miner-app-";
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 // पुराना माइनर जड़ (/) पर था और उसका cache "mnc-miner-v1" ... "mnc-miner-v12" नाम से था
