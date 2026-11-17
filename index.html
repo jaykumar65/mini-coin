@@ -4,13 +4,12 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#14161c">
-  <title>MNC टेस्टनेट माइनर</title>
-  <link rel="manifest" href="manifest.json">
-  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
-  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <title>MiniCoin टेस्टनेट</title>
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
 
-  <!-- Supabase: सिर्फ़ सार्वजनिक (publishable) key। Secret / service_role key यहाँ कभी न डालें।
-       माइनिंग की संख्याएँ (राउंड, इनाम) config/chain.json में हैं। -->
+  <!-- Supabase: सिर्फ़ सार्वजनिक (publishable) key। Secret / service_role key यहाँ कभी न डालें। -->
   <script>
     window.MNC_CONFIG = {
       supabaseUrl: "https://gaddknalbfgzilndmfyf.supabase.co",
@@ -30,6 +29,7 @@
       --warn-bg: #5a2a12;
       --warn-text: #ffd9b8;
       --ok: #5ad19a;
+      --bad: #ff8f7a;
     }
     * { box-sizing: border-box; }
     html { -webkit-text-size-adjust: 100%; }
@@ -40,6 +40,8 @@
       font-family: system-ui, "Noto Sans Devanagari", "Nirmala UI", sans-serif;
       line-height: 1.5;
     }
+    [hidden] { display: none !important; }
+    a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
     .banner {
       position: sticky;
@@ -52,325 +54,139 @@
       padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
     }
 
-    main {
-      max-width: 560px;
-      margin: 0 auto;
-      padding: 20px 16px calc(32px + env(safe-area-inset-bottom));
-    }
+    main { max-width: 560px; margin: 0 auto; padding: 20px 16px calc(32px + env(safe-area-inset-bottom)); }
+    .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
+    .brand img { width: 48px; height: 48px; border-radius: 12px; }
+    h1 { font-size: 1.4rem; margin: 0; }
+    .sub { color: var(--muted); margin: 0 0 18px; font-size: 0.95rem; }
 
-    h1 { font-size: 1.4rem; margin: 0 0 4px; }
-    h2 { font-size: 1.05rem; margin: 0; }
-    .sub { color: var(--muted); margin: 0 0 20px; font-size: 0.95rem; }
-
-    .install { margin: -8px 0 16px; }
-    .install button { min-height: 44px; padding: 0 16px; font-weight: 600; font-size: 0.9rem; }
-    .install p { margin: 0; color: var(--muted); font-size: 0.85rem; }
-
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 16px;
-      margin-bottom: 16px;
-    }
-
-    .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .field label { font-weight: 600; }
-    .field small { display: block; color: var(--muted); font-weight: 400; }
-    .field input {
-      width: 84px;
-      min-height: 48px;
-      font: inherit;
-      font-size: 1.1rem;
-      text-align: center;
-      color: var(--text);
-      background: var(--bg);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-    }
-    .field input:disabled { opacity: 0.5; }
-    .field + .field { margin-top: 12px; }
-    .field input[type="text"] { width: 160px; font-size: 1rem; text-align: left; padding: 0 12px; }
-
-    .wallet-bar {
+    .wallet-status {
       display: flex;
       align-items: center;
+      justify-content: space-between;
       gap: 12px;
-      padding: 12px 14px;
-      margin-bottom: 16px;
+      flex-wrap: wrap;
       background: var(--card);
       border: 1px solid var(--line);
       border-radius: 14px;
+      padding: 12px 14px;
+      margin-bottom: 16px;
+    }
+    .wallet-status small { display: block; color: var(--muted); }
+    .wallet-status code { font-family: ui-monospace, Consolas, monospace; font-size: 0.9rem; overflow-wrap: anywhere; }
+    .badge {
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 0.85rem;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+    .badge.ok { color: var(--ok); border-color: var(--ok); }
+    .badge.bad { color: var(--bad); border-color: var(--bad); }
+    .badge.warn { color: var(--accent); border-color: var(--accent); }
+
+    .tiles { display: grid; gap: 12px; }
+    .tile {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      min-height: 96px;
+      padding: 16px 18px;
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 16px;
       color: var(--text);
       text-decoration: none;
     }
-    .wallet-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-    .wallet-bar-coin {
+    .tile:hover { border-color: var(--accent); }
+    .tile .ic {
       display: grid;
       place-items: center;
-      width: 40px; height: 40px;
+      width: 56px; height: 56px;
       flex: none;
       border-radius: 50%;
-      background: var(--accent);
-      color: var(--accent-ink);
-      font-weight: 800;
+      border: 2px solid var(--accent);
+      color: var(--accent);
     }
-    .wallet-bar-text { flex: 1; min-width: 0; }
-    .wallet-bar-text b { display: block; font-variant-numeric: tabular-nums; }
-    .wallet-bar-text small { display: block; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .wallet-bar-go { color: var(--muted); font-size: 1.6rem; }
+    .tile .ic svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+    .tile b { display: block; font-size: 1.25rem; }
+    .tile small { display: block; color: var(--muted); font-size: 0.9rem; }
+    .tile .go { margin-left: auto; color: var(--muted); font-size: 1.6rem; }
 
-    .send { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 0 12px; }
-    .send button { min-height: 44px; padding: 0 18px; }
-    .send-result { margin: 0; font-size: 0.9rem; flex: 1 1 200px; }
-    .send-result.ok { color: var(--ok); }
-    .send-result.bad { color: var(--warn-text); }
-    .block-state { margin-top: 4px; font-size: 0.82rem; color: var(--muted); }
-    .block-state.ok { color: var(--ok); }
-    .block-state.bad { color: var(--warn-text); }
+    .more { margin: 16px 0 0; color: var(--muted); font-size: 0.9rem; }
+    .more a { color: var(--accent); }
 
-    .actions { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 16px; }
-    button {
-      min-height: 52px;
+    .install { margin: 20px 0 0; }
+    .install button {
+      min-height: 46px;
+      padding: 0 16px;
       font: inherit;
       font-weight: 700;
       border-radius: 12px;
-      border: 1px solid var(--line);
-      background: transparent;
-      color: var(--text);
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: var(--accent-ink);
       cursor: pointer;
-      touch-action: manipulation;
     }
-    button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-    button:disabled { opacity: 0.4; cursor: default; }
-    button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-    .gate {
+    .install p { margin: 0; color: var(--muted); font-size: 0.88rem; }
+    .reinstall {
       margin: 14px 0 0;
       padding: 10px 12px;
+      border: 1px dashed var(--line);
       border-radius: 10px;
-      border: 1px solid var(--line);
-      color: var(--warn-text);
-      font-size: 0.95rem;
+      color: var(--muted);
+      font-size: 0.88rem;
     }
-
-    .status { margin: 14px 0 0; color: var(--muted); font-size: 0.95rem; }
-    .status::before {
-      content: "";
-      display: inline-block;
-      width: 9px; height: 9px;
-      border-radius: 50%;
-      background: var(--muted);
-      margin-right: 8px;
-    }
-    .status.on { color: var(--ok); }
-    .status.on::before { background: var(--ok); }
-
-    .error {
-      margin: 14px 0 0;
-      padding: 10px 12px;
-      border-radius: 10px;
-      background: var(--warn-bg);
-      color: var(--warn-text);
-      font-size: 0.95rem;
-    }
-
-    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 16px; }
-    .stat {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 14px;
-      padding: 12px 8px;
-      text-align: center;
-      min-width: 0;
-    }
-    .stat .num {
-      font-size: 1.25rem;
-      font-weight: 700;
-      font-variant-numeric: tabular-nums;
-      overflow-wrap: anywhere;
-    }
-    .stat .label { color: var(--muted); font-size: 0.8rem; }
-    .stat .label span { display: block; opacity: 0.8; }
-
-    .list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .list-head button { min-height: 40px; padding: 0 12px; font-weight: 600; font-size: 0.85rem; }
-    .note { color: var(--muted); font-size: 0.85rem; margin: 8px 0 12px; }
-
-    ul { list-style: none; margin: 0; padding: 0; }
-    .block { border-top: 1px solid var(--line); padding: 12px 0; }
-    .block-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-    .block-head span, .block-meta { color: var(--muted); font-size: 0.82rem; }
-    .hash {
-      display: block;
-      margin: 6px 0;
-      font-family: ui-monospace, Consolas, monospace;
-      font-size: 0.8rem;
-      overflow-wrap: anywhere;
-    }
-    .hash b { color: var(--accent); }
-    .empty { color: var(--muted); margin: 0; padding: 8px 0; }
-
-    .pin-box { margin-top: 14px; }
-    .pin-box label { display: block; font-weight: 600; margin-bottom: 6px; }
-    .pin-box input {
-      width: 100%;
-      min-height: 52px;
-      padding: 0 14px;
-      font: inherit;
-      font-size: 1.15rem;
-      letter-spacing: 0.12em;
-      color: var(--text);
-      background: var(--bg);
-      border: 1px solid var(--line);
-      border-radius: 10px;
-    }
-    .pin-box small { display: block; color: var(--muted); margin-top: 6px; }
-
-    .round-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-    .round-left { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-    .bar { height: 10px; margin: 10px 0 12px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); overflow: hidden; }
-    .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.9s linear; }
-    .slots { display: flex; gap: 8px; margin-bottom: 10px; }
-    .slot { flex: 1; height: 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); }
-    .slot.on { background: var(--ok); border-color: var(--ok); }
-
-    .reward { border-top: 1px solid var(--line); padding: 10px 0; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
-    .reward b { color: var(--ok); font-variant-numeric: tabular-nums; }
-    .reward span { color: var(--muted); font-size: 0.85rem; }
-
-    [hidden] { display: none !important; }
   </style>
 </head>
 <body>
   <div class="banner" role="note">⚠ यह टेस्टनेट है, इसका कोई मूल्य नहीं।</div>
 
   <main>
-    <h1>MNC टेस्टनेट माइनर</h1>
-    <p class="sub">माइनिंग 3-3 मिनट के राउंड में होती है। हर राउंड का इनाम (50 MNC) उन सब में बराबर बँटता है जो पूरे 3 मिनट माइनर चालू रखकर मौजूद रहे, चाहे फ़ोन से हों या लैपटॉप से। तेज़ फ़ोन का कोई अलग फ़ायदा नहीं। इसके लिए यह पेज खुला और स्क्रीन चालू रहनी चाहिए।</p>
+    <div class="brand">
+      <img src="/icons/icon-192.png" alt="" width="48" height="48">
+      <h1>MiniCoin टेस्टनेट</h1>
+    </div>
+    <p class="sub">माइनिंग करें, अपना वॉलेट देखें, और पूरी चेन का हिसाब एक्सप्लोरर में देखें।</p>
 
-    <!-- इंस्टॉल: बटन सिर्फ़ beforeinstallprompt मिलने पर दिखता है, वरना संकेत -->
-    <div id="install" class="install">
-      <button id="btn-install" type="button" hidden>ऐप इंस्टॉल करें</button>
-      <p id="install-hint">ब्राउज़र मेनू से 'Add to Home screen' चुनें।</p>
+    <!-- माइनर वॉलेट का छोटा स्टेटस (home.js) -->
+    <div class="wallet-status" aria-live="polite">
+      <div>
+        <small>माइनर वॉलेट</small>
+        <code id="ws-address">…</code>
+      </div>
+      <span id="ws-status" class="badge">…</span>
     </div>
 
-    <!-- वॉलेट की पट्टी: माइनर वॉलेट एक अलग ऐप है (wallet/ फ़ोल्डर) -->
-    <a id="wallet-bar" class="wallet-bar" href="wallet/">
-      <span class="wallet-bar-coin" aria-hidden="true">M</span>
-      <span class="wallet-bar-text">
-        <b id="wallet-bar-title">वॉलेट बनाएँ</b>
-        <small id="wallet-bar-sub">माइनिंग का इनाम माइनर वॉलेट के पते पर आता है</small>
-      </span>
-      <span class="wallet-bar-go" aria-hidden="true">›</span>
-    </a>
+    <nav class="tiles" aria-label="मुख्य हिस्से">
+      <a class="tile" href="/miner/">
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20l7-7"/><path d="M14 3c3 0 7 4 7 7l-4-1-3-3z"/><path d="M13 6l5 5"/></svg></span>
+        <span><b>माइनिंग</b><small>3-3 मिनट के राउंड, सबको बराबर हिस्सा</small></span>
+        <span class="go" aria-hidden="true">›</span>
+      </a>
+      <a class="tile" href="/wallet/">
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18"/><circle cx="16.5" cy="14.5" r="1.2"/></svg></span>
+        <span><b>वॉलेट</b><small>माइनर वॉलेट: पता, बैलेंस, PIN</small></span>
+        <span class="go" aria-hidden="true">›</span>
+      </a>
+      <a class="tile" href="/explorer/">
+        <span class="ic" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/></svg></span>
+        <span><b>एक्सप्लोरर</b><small>ब्लॉक, लेन-देन, ट्रेज़री और खोज</small></span>
+        <span class="go" aria-hidden="true">›</span>
+      </a>
+    </nav>
 
-    <section class="card">
-      <!-- माइनिंग सिर्फ़ सक्रिय वॉलेट से; वरना यहाँ कारण दिखता है और बटन बंद रहता है -->
-      <p id="wallet-gate" class="gate" role="status" hidden></p>
+    <p class="more">MNC भेजने और पाने के लिए <a href="/pay/">MNC Pay</a> खोलें।</p>
 
-      <!-- सत्र न हो तो PIN (हस्ताक्षर इसी फ़ोन पर होता है; PIN कहीं नहीं जाता) -->
-      <div id="pin-box" class="pin-box" hidden>
-        <label for="mine-pin">माइनर वॉलेट का PIN (6 अंक)</label>
-        <input id="mine-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" pattern="\d{6}">
-        <small>एक बार डालने पर 12 घंटे तक दोबारा नहीं पूछा जाएगा। यह PIN सिर्फ़ इस फ़ोन की सुरक्षा के लिए है, असली सुरक्षा सर्वर पर है।</small>
-      </div>
-
-      <div class="actions">
-        <button id="btn-start" class="primary" type="button" disabled>माइनिंग शुरू करें</button>
-        <button id="btn-stop" type="button" disabled>रोकें</button>
-      </div>
-
-      <p id="status" class="status" aria-live="polite">रुका हुआ</p>
-      <p id="error" class="error" role="alert" hidden></p>
-    </section>
-
-    <section class="card" aria-label="चल रहा राउंड">
-      <div class="round-head">
-        <h2>चल रहा राउंड</h2>
-        <span><span id="round-left" class="round-left">—</span> <small class="note">बाक़ी</small></span>
-      </div>
-      <div class="bar"><span id="round-bar"></span></div>
-      <div id="slots" class="slots" aria-label="इस राउंड में आपके संकेत"></div>
-      <p id="round-note" class="note"></p>
-    </section>
-
-    <section class="stats" aria-label="आँकड़े">
-      <div class="stat">
-        <div id="stat-people" class="num">—</div>
-        <div class="label">पिछले राउंड में <span>हिस्सेदार</span></div>
-      </div>
-      <div class="stat">
-        <div id="stat-share" class="num">—</div>
-        <div class="label">हर एक को <span>(MNC)</span></div>
-      </div>
-      <div class="stat">
-        <div id="stat-total" class="num">—</div>
-        <div class="label">आपकी कुल कमाई <span>(राउंड से, MNC)</span></div>
-      </div>
-    </section>
-
-    <section class="card">
-      <h2>आपके हाल के इनाम</h2>
-      <p class="note">इनाम आपके माइनर वॉलेट में आता है। उसे खर्च करने या किसी को देने के लिए माइनर वॉलेट से अपने <a href="pay/" style="color:var(--accent)">MNC Pay वॉलेट</a> में भेजें।</p>
-      <p id="reward-empty" class="empty">अभी तक कोई इनाम नहीं मिला।</p>
-      <ul id="reward-list"></ul>
-    </section>
+    <div id="install" class="install">
+      <button id="btn-install" type="button" hidden>ऐप इंस्टॉल करें</button>
+      <p id="install-hint">ऐप की तरह खोलने के लिए ब्राउज़र मेनू से 'Add to Home screen' चुनें।</p>
+    </div>
+    <p class="reinstall">अगर पुराना आइकन काम न करे, तो ऐप फिर से इंस्टॉल करें।</p>
   </main>
 
-  <script src="config/units.js"></script>
-  <script src="wallet/vault.js"></script>
-  <script src="miner.js"></script>
-
-  <!-- PWA: service worker रजिस्ट्रेशन और "ऐप इंस्टॉल करें" बटन -->
-  <script>
-    (function () {
-      "use strict";
-
-      if ("serviceWorker" in navigator) {
-        window.addEventListener("load", function () {
-          navigator.serviceWorker.register("sw.js").catch(function () {
-            /* रजिस्टर न हो (जैसे file:// पर) तो भी माइनर सामान्य रूप से चले */
-          });
-        });
-      }
-
-      var box = document.getElementById("install");
-      var button = document.getElementById("btn-install");
-      var hint = document.getElementById("install-hint");
-      var deferredPrompt = null;
-
-      var standalone =
-        window.matchMedia("(display-mode: standalone)").matches ||
-        window.navigator.standalone === true;
-      if (standalone) {
-        box.hidden = true; // पहले से ऐप की तरह खुला है
-        return;
-      }
-
-      window.addEventListener("beforeinstallprompt", function (e) {
-        e.preventDefault();
-        deferredPrompt = e;
-        button.hidden = false;
-        hint.hidden = true;
-      });
-
-      button.addEventListener("click", function () {
-        if (!deferredPrompt) return;
-        var prompt = deferredPrompt;
-        deferredPrompt = null;
-        button.hidden = true;
-        prompt.prompt();
-        prompt.userChoice.then(function (choice) {
-          if (choice.outcome !== "accepted") hint.hidden = false;
-        });
-      });
-
-      window.addEventListener("appinstalled", function () {
-        deferredPrompt = null;
-        box.hidden = true;
-      });
-    })();
-  </script>
+  <script src="/home.js"></script>
 </body>
 </html>

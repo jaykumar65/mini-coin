@@ -1,7 +1,8 @@
 {
-  "name": "MiniCoin Miner (TESTNET)",
-  "short_name": "MNC Miner",
-  "description": "MNC टेस्टनेट का proof-of-work सिमुलेशन। यह टेस्टनेट है, इसका कोई मूल्य नहीं।",
+  "id": "/",
+  "name": "MiniCoin (TESTNET)",
+  "short_name": "MiniCoin",
+  "description": "MNC टेस्टनेट: माइनिंग, वॉलेट और एक्सप्लोरर। यह टेस्टनेट है, इसका कोई मूल्य नहीं।",
   "lang": "hi",
   "start_url": "./",
   "scope": "./",

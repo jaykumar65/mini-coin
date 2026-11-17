@@ -1,31 +1,26 @@
-// MNC टेस्टनेट माइनर — service worker
-// काम: ऐप की अपनी फ़ाइलें cache करना, ताकि पेज ऑफ़लाइन भी खुले।
-// यह किसी बाहरी सर्वर से कुछ नहीं माँगता; सिर्फ़ इसी फ़ोल्डर की फ़ाइलें।
+// MiniCoin होम (/) — service worker
 //
-// कोई भी फ़ाइल बदलने पर CACHE_VERSION बढ़ाएँ (v1 -> v2)। तभी फ़ोन पर
-// नया संस्करण पहुँचेगा और पुराना cache हटेगा।
+// काम: सिर्फ़ होम पेज की अपनी फ़ाइलें ऑफ़लाइन cache करना।
+// इसका scope "/" है, पर यह /miner/, /wallet/, /pay/, /explorer/, /site/ की फ़ाइलों को छूता नहीं:
+// उनके अनुरोध सीधे नेटवर्क (या उनके अपने service worker) को जाते हैं।
 //
-// Cloudflare "wallet.html" को "/wallet" पर redirect करता है। ब्राउज़र redirect
-// वाले cached जवाब को पेज की तरह नहीं खोलता (ERR_FAILED), इसलिए यहाँ हर
-// जवाब को redirect की छाप हटाकर ही cache में रखा और लौटाया जाता है।
+// पहले इसी पते (/sw.js) पर पुराना माइनर का service worker था, जो "/" पर माइनर का पेज cache से
+// दिखाता था। यह नया worker चालू होते ही उसका cache हटाता है और खुले पन्नों को एक बार दोबारा
+// खोलता है, ताकि पुराने cache से माइनर की जगह नया होम पेज दिखे।
+//
+// कोई भी होम फ़ाइल बदलने पर CACHE_VERSION बढ़ाएँ।
 
 "use strict";
 
-const CACHE_VERSION = "v12";
-const CACHE_PREFIX = "mnc-miner-";
+const CACHE_VERSION = "v1";
+const CACHE_PREFIX = "mnc-home-";
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
+const LEGACY_CACHE_RE = /^mnc-miner-v\d+$/; // पुराना माइनर जब "/" पर था
 
-const ASSETS = [
-  "./",
-  "index.html",
-  "miner.js",
-  "wallet.html",
-  "manifest.json",
-  "icons/icon-192.png",
-  "icons/icon-512.png",
-];
+// होम की फ़ाइलें, scope के हिसाब से पूरे रास्ते (pathname) में
+const ASSETS = ["/", "/manifest.json", "/home.js", "/icons/icon-192.png", "/icons/icon-512.png"];
+const OWN = new Set(ASSETS.concat(["/index.html"]));
 
-// redirect से आया जवाब हो तो उसकी साफ़ कॉपी (वही सामग्री, बिना redirect की छाप)
 async function clean(response) {
   if (!response || !response.redirected) return response;
   return new Response(await response.blob(), {
@@ -41,11 +36,10 @@ self.addEventListener("install", (event) => {
       .open(CACHE_NAME)
       .then((cache) =>
         Promise.all(
-          ASSETS.map(async (url) => {
-            // cache: "reload" — ब्राउज़र के HTTP cache की पुरानी कॉपी न उठे
-            const response = await fetch(new Request(url, { cache: "reload" }));
-            if (!response.ok) throw new Error(url + " " + response.status);
-            await cache.put(url, await clean(response));
+          ASSETS.map(async (path) => {
+            const response = await fetch(new Request(path, { cache: "reload" }));
+            if (!response.ok) throw new Error(path + " " + response.status);
+            await cache.put(path, await clean(response));
           })
         )
       )
@@ -55,16 +49,24 @@ self.addEventListener("install", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME)
-            .map((key) => caches.delete(key))
-        )
-      )
-      .then(() => self.clients.claim())
+    (async () => {
+      const keys = await caches.keys();
+      const legacy = keys.some((key) => LEGACY_CACHE_RE.test(key));
+      await Promise.all(
+        keys
+          .filter((key) => (key.startsWith(CACHE_PREFIX) && key !== CACHE_NAME) || LEGACY_CACHE_RE.test(key))
+          .map((key) => caches.delete(key))
+      );
+      await self.clients.claim();
+      // पुराने माइनर के cache से खुला "/" पेज एक बार दोबारा खोलें, ताकि होम दिखे
+      if (legacy) {
+        const windows = await self.clients.matchAll({ type: "window" });
+        for (const client of windows) {
+          const path = new URL(client.url).pathname;
+          if (path === "/" || path === "/index.html") client.navigate(client.url).catch(() => {});
+        }
+      }
+    })()
   );
 });
 
@@ -73,23 +75,19 @@ self.addEventListener("fetch", (event) => {
   if (request.method !== "GET") return;
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
+  const path = url.pathname === "/index.html" ? "/" : url.pathname;
+  if (!OWN.has(path)) return; // दूसरे ऐप की फ़ाइलें: इस worker का कोई दख़ल नहीं
 
   event.respondWith(
     caches.open(CACHE_NAME).then(async (cache) => {
-      let cached = await cache.match(request, { ignoreSearch: true });
-      // "/wallet" जैसे बिना .html वाले पते के लिए "wallet.html" की कॉपी
-      if (!cached && request.mode === "navigate" && !/\.[a-z0-9]+$/i.test(url.pathname) && !url.pathname.endsWith("/")) {
-        cached = await cache.match(url.pathname + ".html");
-      }
-      if (cached) return clean(cached);
+      // होम पेज पहले नेटवर्क से (वॉलेट की स्थिति वगैरह ताज़ा रहें), न मिले तो cache
       try {
-        return await clean(await fetch(request));
+        const fresh = await clean(await fetch(request));
+        if (fresh.ok) cache.put(path, fresh.clone());
+        return fresh;
       } catch (err) {
-        // ऑफ़लाइन में कोई भी पेज-नेविगेशन index.html पर ले जाए
-        if (request.mode === "navigate") {
-          const shell = await cache.match("index.html");
-          if (shell) return clean(shell);
-        }
+        const cached = await cache.match(path);
+        if (cached) return clean(cached);
         throw err;
       }
     })
