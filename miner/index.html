@@ -41,10 +41,8 @@
       line-height: 1.5;
     }
 
+    .topwrap { position: sticky; top: 0; z-index: 10; }
     .banner {
-      position: sticky;
-      top: 0;
-      z-index: 10;
       background: var(--warn-bg);
       color: var(--warn-text);
       text-align: center;
@@ -129,7 +127,7 @@
     .block-state.ok { color: var(--ok); }
     .block-state.bad { color: var(--warn-text); }
 
-    .actions { display: grid; grid-template-columns: 2fr 1fr; gap: 10px; margin-top: 16px; }
+    .actions { display: grid; grid-template-columns: 1fr; gap: 10px; margin-top: 16px; }
     button {
       min-height: 52px;
       font: inherit;
@@ -209,6 +207,118 @@
     .bg-state.on { color: var(--ok); }
     .bg-log { list-style: none; margin: 0; padding: 0; font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
     .bg-log li { padding: 4px 0; border-top: 1px solid var(--line); }
+
+    /* ---------- गेम ---------- */
+    .play-state { font-size: 0.85rem; font-weight: 700; color: var(--muted); text-align: right; }
+    .play-state.on { color: var(--ok); }
+    .play-state.idle { color: var(--accent); }
+    .game-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0 12px; }
+    .game-tab {
+      min-height: 46px;
+      font: inherit;
+      font-weight: 700;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+    }
+    .game-tab.on { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+    .game-hud { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-size: 0.9rem; color: var(--muted); }
+    .game-hud b { color: var(--text); font-variant-numeric: tabular-nums; }
+    .lives { color: var(--accent); letter-spacing: 2px; }
+
+    .coin-field {
+      position: relative;
+      height: 360px;
+      overflow: hidden;
+      border-radius: 12px;
+      background: radial-gradient(circle at 50% 0%, #262b38, var(--bg));
+      border: 1px solid var(--line);
+      touch-action: manipulation;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .coin {
+      position: absolute;
+      left: 0; top: 0;
+      width: 52px; height: 52px;
+      min-height: 0;
+      padding: 0;
+      border-radius: 50%;
+      border: 3px solid #c98e1c;
+      background: var(--accent);
+      color: var(--accent-ink);
+      font-weight: 800;
+      font-size: 1.3rem;
+      cursor: pointer;
+      will-change: transform;
+      transition: opacity 0.15s, scale 0.15s;
+    }
+    .coin.stone { background: #3a3f4b; border-color: #5b6272; color: #ff8f7a; }
+    .coin.got { scale: 1.4; opacity: 0; }
+    .coin.bad { background: #ff8f7a; opacity: 0; }
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-content: center;
+      gap: 12px;
+      padding: 20px;
+      text-align: center;
+      background: rgba(20, 22, 28, 0.88);
+      z-index: 2;
+    }
+    .overlay p { margin: 0; }
+    .overlay button { min-height: 50px; padding: 0 24px; font-size: 1.05rem; }
+
+    .pair-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+    .card-tile {
+      aspect-ratio: 1;
+      min-height: 0;
+      padding: 0;
+      border-radius: 12px;
+      border: 1px solid var(--line);
+      background: #2a3040;
+      font-size: 1.8rem;
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+    }
+    .card-tile span { display: none; }
+    .card-tile::after { content: "M"; color: #4a5266; font-weight: 800; font-size: 1.2rem; }
+    .card-tile.up, .card-tile.done { background: var(--card); border-color: var(--accent); }
+    .card-tile.up span, .card-tile.done span { display: inline; }
+    .card-tile.up::after, .card-tile.done::after { content: none; }
+    .card-tile.done { opacity: 0.55; border-color: var(--ok); }
+    .pair-msg { margin: 10px 0 0; color: var(--ok); font-weight: 600; }
+    .pair-msg:empty { display: none; }
+    .pair-again { width: 100%; margin-top: 10px; min-height: 48px; }
+
+    /* ऊपर की माइनिंग पट्टी */
+    .mine-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 16px;
+      background: var(--card);
+      border-bottom: 1px solid var(--line);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+    .mb-dot { width: 12px; height: 12px; flex: none; border-radius: 50%; background: var(--muted); }
+    .mine-bar.on .mb-dot { background: var(--ok); box-shadow: 0 0 0 0 rgba(90, 209, 154, 0.6); animation: mbpulse 1.6s infinite; }
+    .mine-bar.wait .mb-dot { background: var(--accent); }
+    @keyframes mbpulse { 70% { box-shadow: 0 0 0 8px rgba(90, 209, 154, 0); } 100% { box-shadow: 0 0 0 0 rgba(90, 209, 154, 0); } }
+    @media (prefers-reduced-motion: reduce) { .mine-bar.on .mb-dot { animation: none; } }
+    .mb-text { flex: 1; min-width: 0; }
+    .mb-text b { display: block; font-size: 0.95rem; }
+    .mine-bar.on .mb-text b { color: var(--ok); }
+    .mine-bar.wait .mb-text b { color: var(--accent); }
+    .mb-text small { display: block; color: var(--muted); font-size: 0.8rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .mb-time { text-align: right; flex: none; }
+    .mb-time b { display: block; font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+    .mb-time small { display: block; color: var(--muted); font-size: 0.75rem; }
+
     .home-link { display: inline-block; margin: 0 0 12px; color: var(--muted); text-decoration: none; min-height: 32px; }
 
     ul { list-style: none; margin: 0; padding: 0; }
@@ -257,12 +367,20 @@
   </style>
 </head>
 <body>
-  <div class="banner" role="note">⚠ यह टेस्टनेट है, इसका कोई मूल्य नहीं।</div>
+  <div class="topwrap">
+    <div class="banner" role="note">⚠ यह टेस्टनेट है, इसका कोई मूल्य नहीं।</div>
+    <!-- माइनिंग की स्थिति और आज का समय (miner.js) -->
+    <div id="mine-bar" class="mine-bar" role="status" aria-live="polite">
+      <span class="mb-dot" aria-hidden="true"></span>
+      <span class="mb-text"><b id="mb-title">…</b><small id="mb-sub"></small></span>
+      <span class="mb-time"><b id="mb-time">0:00:00</b><small>आज की माइनिंग</small></span>
+    </div>
+  </div>
 
   <main>
     <a class="home-link" href="../">‹ होम</a>
     <h1>MNC टेस्टनेट माइनर</h1>
-    <p class="sub">माइनिंग 3-3 मिनट के राउंड में होती है। हर राउंड का इनाम (50 MNC) उन सब में बराबर बँटता है जो पूरे 3 मिनट माइनर चालू रखकर मौजूद रहे, चाहे फ़ोन से हों या लैपटॉप से। तेज़ फ़ोन का कोई अलग फ़ायदा नहीं। इसके लिए यह पेज खुला और स्क्रीन चालू रहनी चाहिए।</p>
+    <p class="sub">माइनिंग 3-3 मिनट के राउंड में होती है। हर राउंड का इनाम (50 MNC) उन सब में बराबर बँटता है जो पूरे 3 मिनट माइनर चालू रखकर मौजूद रहे, चाहे फ़ोन से हों या लैपटॉप से। तेज़ फ़ोन का कोई अलग फ़ायदा नहीं। ऐप खोलते ही माइनिंग अपने आप चलती है; बस ऐप खुला रखें और नीचे दिया कोई गेम खेलते रहें।</p>
 
     <!-- इंस्टॉल: बटन सिर्फ़ beforeinstallprompt मिलने पर दिखता है, वरना संकेत -->
     <div id="install" class="install">
@@ -288,24 +406,63 @@
       <div id="pin-box" class="pin-box" hidden>
         <label for="mine-pin">माइनर वॉलेट का PIN (6 अंक)</label>
         <input id="mine-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" pattern="\d{6}">
-        <small>एक बार डालने पर 12 घंटे तक दोबारा नहीं पूछा जाएगा। यह PIN सिर्फ़ इस फ़ोन की सुरक्षा के लिए है, असली सुरक्षा सर्वर पर है।</small>
+        <small>एक बार डालने पर 7 दिन तक दोबारा नहीं पूछा जाएगा। यह PIN सिर्फ़ इस फ़ोन की सुरक्षा के लिए है, असली सुरक्षा सर्वर पर है।</small>
       </div>
 
       <div class="actions">
-        <button id="btn-start" class="primary" type="button" disabled>माइनिंग शुरू करें</button>
-        <button id="btn-stop" type="button" disabled>रोकें</button>
+        <button id="btn-start" class="primary" type="button" hidden>PIN डालकर माइनिंग शुरू करें</button>
+        <button id="btn-stop" type="button" hidden>रोकें</button>
       </div>
 
       <p id="status" class="status" aria-live="polite">रुका हुआ</p>
       <p id="error" class="error" role="alert" hidden></p>
     </section>
 
+    <!-- गेम: खेलते रहने पर ही माइनिंग चलती है (games.js) -->
+    <section class="card games" aria-labelledby="games-title">
+      <div class="list-head">
+        <h2 id="games-title">खेलें और माइनिंग चालू रखें</h2>
+        <span id="play-state" class="play-state">—</span>
+      </div>
+      <p class="note">माइनिंग तभी चलती है जब यह ऐप सामने खुला हो और पिछले 2 मिनट में आपने गेम में कोई चाल चली हो। स्कोर सिर्फ़ मज़े के लिए है; इनाम सबको बराबर मिलता है।</p>
+
+      <div class="game-tabs" role="tablist" aria-label="गेम चुनें">
+        <button class="game-tab on" type="button" role="tab" aria-selected="true" data-game="coins">सिक्का पकड़ो</button>
+        <button class="game-tab" type="button" role="tab" aria-selected="false" data-game="pairs">जोड़ी मिलाओ</button>
+      </div>
+
+      <div id="game-coins" class="game-pane">
+        <div class="game-hud">
+          <span>स्कोर <b id="coin-score">0</b></span>
+          <span id="coin-lives" class="lives">●●●●●</span>
+          <span>सबसे अच्छा <b id="coin-best">0</b></span>
+        </div>
+        <div id="coin-field" class="coin-field">
+          <div id="coin-overlay" class="overlay">
+            <p id="coin-overlay-text">गिरते <b>M</b> सिक्कों को टैप करें। <b>✕</b> पत्थर मत छुएँ। 5 सिक्के छूटे तो खेल ख़त्म।</p>
+            <button id="coin-start" class="primary" type="button">खेल शुरू करें</button>
+          </div>
+        </div>
+      </div>
+
+      <div id="game-pairs" class="game-pane" hidden>
+        <div class="game-hud">
+          <span>चालें <b id="pair-moves">0</b></span>
+          <span>मिले <b id="pair-found">0/8</b></span>
+          <span>सबसे अच्छा <b id="pair-best">—</b></span>
+        </div>
+        <div id="pair-grid" class="pair-grid"></div>
+        <p id="pair-msg" class="pair-msg" role="status"></p>
+        <button id="pair-again" class="primary pair-again" type="button" hidden>नया खेल</button>
+      </div>
+    </section>
+
     <section class="card" aria-labelledby="bg-title">
       <div class="list-head">
-        <h2 id="bg-title">बैकग्राउंड में माइनिंग</h2>
+        <h2 id="bg-title">माइनिंग का लॉग</h2>
         <button id="btn-bg-clear" type="button">लॉग साफ़ करें</button>
       </div>
-      <p class="bg-warn">ब्राउज़र बैकग्राउंड में माइनिंग रोक सकता है। ऐप खुला रखने पर माइनिंग सबसे अच्छी चलती है।</p>
+      <p class="bg-warn">ऐप से बाहर जाने या 2 मिनट तक न खेलने पर माइनिंग रुक जाती है। ऐप खुला रखकर खेलते रहने पर माइनिंग सबसे अच्छी चलती है।</p>
       <p id="bg-state" class="bg-state">रुकी हुई</p>
       <p id="bg-last" class="note"></p>
       <ul id="bg-log" class="bg-log" aria-label="हाल का लॉग"></ul>
@@ -347,6 +504,7 @@
   <script src="../config/units.js"></script>
   <script src="../wallet/vault.js"></script>
   <script src="miner.js"></script>
+  <script src="games.js"></script>
 
   <!-- PWA: service worker रजिस्ट्रेशन और "ऐप इंस्टॉल करें" बटन -->
   <script>

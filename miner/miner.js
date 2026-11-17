@@ -1,5 +1,8 @@
 // MNC टेस्टनेट माइनर — मुख्य UI लॉजिक
 //
+// खेलने की शर्त: संकेत तभी जाते हैं जब यह ऐप सामने खुला हो और पिछले 2 मिनट में गेम (games.js)
+// में कोई चाल चली गई हो। ऐप पीछे गया या 2 मिनट कुछ नहीं खेला, तो संकेत रुकते हैं; खेलते ही फिर चलते हैं।
+//
 // माइनिंग का नियम (supabase/sql/003_rounds.sql):
 //   - घड़ी 3 मिनट के राउंड में बँटी है, और हर राउंड 30-30 सेकंड के खानों में।
 //   - माइनर चालू हो तो वह हर खाने में एक "मैं हूँ" संकेत भेजता है।
@@ -7,7 +10,9 @@
 //     (50 MNC) सभी हिस्सेदारों में बराबर बँटता है। फ़ोन हो या लैपटॉप, सबका हिस्सा बराबर।
 //   - संख्याएँ config/chain.json से आती हैं; समय हमेशा सर्वर का गिना जाता है।
 //
-// चालू करना: "माइनिंग शुरू करें" पर PIN से हस्ताक्षर करके सर्वर से एक सत्र (token) लिया जाता है
+// चालू होना: ऐप खुलते ही, या गेम में पहली चाल पर, माइनिंग अपने आप चलती है (अलग बटन नहीं)।
+// इसके लिए सर्वर का सत्र (token) चाहिए: पहली बार (और सत्र ख़त्म होने पर) एक बार PIN से हस्ताक्षर करके
+// "PIN डालकर माइनिंग शुरू करें" से सत्र लिया जाता है
 // (mining-session function)। फिर हर संकेत डेटाबेस के mnc_ping function को उसी token के साथ जाता है।
 // PIN और private key सिर्फ़ इस फ़ोन पर रहते हैं (wallet/vault.js)।
 //
@@ -30,6 +35,8 @@
   const LOG_KEY = "mnc_miner_log";     // [{ type, t, up_s, vis, ... }]  type: start|stop|hidden|visible|hb
   const LOG_MAX = 600;                 // 30 सेकंड पर 600 = लगभग 5 घंटे
   const HEARTBEAT_MS = 30 * 1000;
+  const PLAY_WINDOW_MS = 2 * 60 * 1000; // आख़िरी चाल के बाद इतनी देर तक माइनिंग चलती है
+  const MINED_KEY = "mnc_mined_today";  // { day: "YYYY-MM-DD", ms } आज कितनी देर माइनिंग चली
 
   const $ = (id) => document.getElementById(id);
   const el = {
@@ -50,6 +57,7 @@
     list: $("reward-list"),
     empty: $("reward-empty"),
     bgState: $("bg-state"),
+    playState: $("play-state"),
     bgLast: $("bg-last"),
     bgLog: $("bg-log"),
     bgClear: $("btn-bg-clear"),
@@ -70,6 +78,19 @@
   let worker = null;            // ping-worker.js; न बन सके तो पेज ख़ुद संकेत भेजता है
   let startedAt = 0;            // माइनिंग कब चालू हुई (ms)
   let lastBeatAt = 0;           // आख़िरी heartbeat (ms)
+  let lastPlayAt = 0;           // गेम में आख़िरी चाल (ms)
+  let paused = false;           // माइनर चालू है, पर ऐप पीछे है या यूज़र खेल नहीं रहा
+  let pauseWhy = "";
+  let lastTickAt = 0;
+
+  // गेम (games.js) हर चाल पर यह बुलाते हैं
+  window.MNCPlay = {
+    touch() {
+      lastPlayAt = Date.now();
+      if (!active) autoStart();
+      else if (paused) syncPlay();
+    },
+  };
 
   // ---------- वॉलेट ----------
   // सिर्फ़ सार्वजनिक पता पढ़ा जाता है (wallet/ ऐप का localStorage)
@@ -107,6 +128,14 @@
     walletStatus = next;
     if (next !== "active" && active) stop();
     render();
+    autoStart();
+  }
+
+  // ऐप खुला है, वॉलेट सक्रिय है और सत्र चालू है: माइनिंग अपने आप शुरू
+  function autoStart() {
+    if (active || starting || walletStatus !== "active" || !readSession()) return;
+    if (document.visibilityState !== "visible") return;
+    start();
   }
 
   // ---------- सत्र (token) ----------
@@ -217,7 +246,7 @@
   async function ping() {
     if (!active) return;
     if (worker) { worker.postMessage({ type: "ping-now" }); return; }
-    if (pinging) return;
+    if (pinging || paused) return;
     const session = sessionOrStop();
     if (!session) return;
     pinging = true;
@@ -255,7 +284,7 @@
       if (!/^\d{6}$/.test(pin)) {
         el.pinBox.hidden = false;
         el.pin.focus();
-        showError("माइनिंग शुरू करने के लिए अपने माइनर वॉलेट का 6 अंकों का PIN लिखें।");
+        showError("पहली बार माइनिंग शुरू करने के लिए अपने माइनर वॉलेट का 6 अंकों का PIN लिखें। उसके बाद 7 दिन तक ऐप खोलते ही माइनिंग अपने आप चलेगी।");
         return;
       }
       starting = true;
@@ -275,18 +304,22 @@
     }
     active = true;
     startedAt = Date.now();
+    lastPlayAt = Date.now(); // “शुरू करें” दबाना भी खेलना गिना जाए
+    paused = false;
     lastBeatAt = startedAt;
     holdScreen();
     logEvent("start");
     writeState();
     startWorker(session);
     render();
+    syncPlay();
     if (!worker) ping();
   }
 
   function stop() {
     const wasActive = active;
     active = false;
+    paused = false;
     if (worker) {
       worker.postMessage({ type: "stop" });
       worker.terminate();
@@ -326,7 +359,118 @@
       everyMs: ((Number(chain && chain.heartbeat_seconds) || 30) * 1000) / 3,
       heartbeatMs: HEARTBEAT_MS,
       startedAt,
+      paused,
     });
+  }
+
+  // ---------- खेलने की शर्त ----------
+  function playingNow() {
+    if (document.visibilityState !== "visible") return "hidden";
+    if (Date.now() - lastPlayAt >= PLAY_WINDOW_MS) return "idle";
+    return "";
+  }
+
+  // शर्त बदली हो तो Worker को रोकें / चलाएँ, और लॉग में लिखें
+  function syncPlay() {
+    if (!active) return;
+    const why = playingNow();
+    const stopNow = !!why;
+    if (stopNow !== paused) {
+      paused = stopNow;
+      pauseWhy = why;
+      if (worker) worker.postMessage({ type: paused ? "pause" : "resume" });
+      logEvent(paused ? "pause" : "resume", paused ? { why } : undefined);
+      if (!paused && !worker) ping();
+      render();
+    } else if (paused && why !== pauseWhy) {
+      pauseWhy = why;
+      render();
+    }
+  }
+
+  // ---------- आज की माइनिंग का समय ----------
+  // सिर्फ़ वह समय गिना जाता है जब संकेत सच में जा रहे थे (चालू, रुका नहीं, इंटरनेट ठीक)
+  const today = () => {
+    const d = new Date();
+    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  };
+
+  function readMined() {
+    const m = readJson(MINED_KEY, null);
+    return m && m.day === today() && Number.isFinite(m.ms) ? m : { day: today(), ms: 0 };
+  }
+
+  function addMinedTime() {
+    const now = Date.now();
+    const dt = lastTickAt ? Math.min(5000, now - lastTickAt) : 0; // पेज रुका था तो बीच का समय न जोड़ें
+    lastTickAt = now;
+    if (!active || paused || netError || dt <= 0) return;
+    const m = readMined();
+    m.ms += dt;
+    writeJson(MINED_KEY, m);
+  }
+
+  const hms = (ms) => {
+    const s = Math.floor(ms / 1000);
+    return Math.floor(s / 3600) + ":" + String(Math.floor(s / 60) % 60).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0");
+  };
+
+  // ---------- ऊपर की पट्टी ----------
+  function renderTopBar() {
+    const bar = $("mine-bar");
+    if (!bar) return;
+    let title, sub = "", cls = "";
+    if (walletStatus === "none") {
+      title = "माइनर वॉलेट बनाएँ";
+      sub = "होम पर “वॉलेट” से बनाएँ, फिर माइनिंग अपने आप चलेगी";
+    } else if (walletStatus === "loading") {
+      title = "वॉलेट जाँचा जा रहा है…";
+    } else if (walletStatus !== "active") {
+      title = "माइनिंग बंद";
+      sub = walletStatus === "unknown" ? "इंटरनेट जाँचें" : "वॉलेट सक्रिय नहीं";
+    } else if (starting) {
+      title = "माइनिंग शुरू हो रही है…";
+      cls = "wait";
+    } else if (!active) {
+      title = readSession() ? "माइनिंग शुरू हो रही है…" : "एक बार PIN डालें";
+      sub = readSession() ? "" : "फिर 7 दिन तक ऐप खोलते ही माइनिंग अपने आप चलेगी";
+      cls = "wait";
+    } else if (paused) {
+      title = pauseWhy === "idle" ? "माइनिंग रुकी · कोई गेम खेलें" : "माइनिंग रुकी";
+      sub = pauseWhy === "idle" ? "एक टैप करते ही फिर चलेगी" : "ऐप पर लौटते ही फिर चलेगी";
+      cls = "wait";
+    } else if (netError) {
+      title = "इंटरनेट नहीं मिल रहा";
+      sub = "संकेत अपने आप दोबारा जाएगा";
+      cls = "wait";
+    } else {
+      title = "⛏ माइनिंग चल रही है";
+      const left = Math.max(0, Math.ceil((lastPlayAt + PLAY_WINDOW_MS - Date.now()) / 1000));
+      sub = "राउंड में बाक़ी " + (el.roundLeft ? el.roundLeft.textContent : "—") +
+        " · बिना खेले " + Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0") + " और";
+      cls = "on";
+    }
+    $("mb-title").textContent = title;
+    $("mb-sub").textContent = sub;
+    $("mb-time").textContent = hms(readMined().ms);
+    bar.className = "mine-bar" + (cls ? " " + cls : "");
+  }
+
+  // गेम कार्ड के ऊपर: माइनिंग चल रही है या खेलना है, और कितना समय बचा
+  function renderPlay() {
+    if (!el.playState) return;
+    let text = "माइनिंग बंद";
+    let cls = "";
+    if (active && paused) {
+      text = pauseWhy === "idle" ? "रुकी: खेलें" : "रुकी";
+      cls = "idle";
+    } else if (active) {
+      const left = Math.max(0, Math.ceil((lastPlayAt + PLAY_WINDOW_MS - Date.now()) / 1000));
+      text = "माइनिंग चालू · " + Math.floor(left / 60) + ":" + String(left % 60).padStart(2, "0");
+      cls = "on";
+    }
+    el.playState.textContent = text;
+    el.playState.className = "play-state" + (cls ? " " + cls : "");
   }
 
   // ---------- स्थिति और heartbeat लॉग (localStorage) ----------
@@ -375,6 +519,7 @@
       ok_pings: msg ? msg.ok_pings : null,
       net: netError ? "error" : "ok",
       by: msg ? "worker" : "page",
+      paused,
     });
   }
 
@@ -409,7 +554,7 @@
 
     const st = lastHiddenStretch(log);
     if (!st) {
-      el.bgLast.textContent = "अभी तक माइनिंग के दौरान पेज छिपा नहीं। जाँचने के लिए माइनिंग चालू करके स्क्रीन बंद करें और 2 मिनट बाद लौटें।";
+      el.bgLast.textContent = "अभी तक माइनिंग के दौरान ऐप पीछे नहीं गया। ऐप पीछे जाने पर माइनिंग रुकती है और लौटते ही फिर चलती है।";
     } else {
       const expected = Math.floor(st.hiddenFor / 30);
       el.bgLast.textContent =
@@ -419,11 +564,12 @@
         dur(Math.max(0, st.ranFor)) + " चली।";
     }
 
-    const LABEL = { start: "शुरू", stop: "रुकी", hidden: "पेज छिपा", visible: "पेज दिखा", hb: "heartbeat" };
+    const LABEL = { start: "शुरू", stop: "रुकी", hidden: "पेज छिपा", visible: "पेज दिखा", hb: "heartbeat", pause: "संकेत रुके", resume: "संकेत फिर चले" };
     el.bgLog.replaceChildren(...log.slice(-8).reverse().map((e) => {
       const li = document.createElement("li");
       li.textContent = clock(e.t) + " · " + (LABEL[e.type] || e.type) + " · चालू " + dur(e.up_s || 0) +
-        (e.type === "hb" && e.pings != null ? " · संकेत " + (e.ok_pings || 0) + "/" + e.pings : "");
+        (e.type === "hb" && e.pings != null ? " · संकेत " + (e.ok_pings || 0) + "/" + e.pings : "") +
+        (e.type === "pause" ? (e.why === "idle" ? " (2 मिनट से नहीं खेला)" : " (ऐप पीछे गया)") : "");
       return li;
     }));
   }
@@ -459,18 +605,24 @@
   };
 
   function render() {
-    el.start.disabled = active || starting || walletStatus !== "active";
-    el.stop.disabled = !active;
+    el.start.hidden = active || walletStatus !== "active" || !!readSession();
+    el.start.disabled = starting;
+    el.stop.hidden = true;
     el.gate.textContent = GATE_TEXT[walletStatus] || "";
     el.gate.hidden = walletStatus === "active";
     el.pinBox.hidden = active || walletStatus !== "active" || !!readSession();
-    el.start.textContent = starting ? "शुरू हो रहा है…" : "माइनिंग शुरू करें";
+    el.start.textContent = starting ? "शुरू हो रहा है…" : "PIN डालकर माइनिंग शुरू करें";
 
     let text = "रुका हुआ";
     if (starting) text = "सत्र लिया जा रहा है…";
+    else if (active && paused) text = pauseWhy === "idle"
+      ? "माइनिंग रुकी है: 2 मिनट से कोई चाल नहीं चली। नीचे गेम खेलें, माइनिंग अपने आप चलेगी।"
+      : "माइनिंग रुकी है: ऐप सामने नहीं है।";
     else if (active) text = netError ? "इंटरनेट नहीं मिल रहा; संकेत दोबारा भेजा जाएगा…" : "माइनिंग चल रही है: हर 30 सेकंड “मैं हूँ” का संकेत जा रहा है।";
     el.status.textContent = text;
-    el.status.classList.toggle("on", active && !netError);
+    el.status.classList.toggle("on", active && !paused && !netError);
+    renderPlay();
+    renderTopBar();
 
     renderRound();
   }
@@ -572,7 +724,11 @@
   // हर सेकंड: उलटी गिनती; माइनर चालू हो तो हर कुछ सेकंड एक संकेत (एक खाने में 3 बार,
   // ताकि नेटवर्क की छोटी रुकावट से खाना न छूटे; सर्वर एक खाने को एक ही बार गिनता है)।
   function tick() {
-    if (chain && active && !worker) {
+    syncPlay();
+    addMinedTime();
+    renderPlay();
+    renderTopBar();
+    if (chain && active && !worker && !paused) {
       const every = (Number(chain.heartbeat_seconds) * 1000) / 3;
       if (Date.now() - lastPingAt >= every) ping();
       if (Date.now() - lastBeatAt >= HEARTBEAT_MS) onHeartbeat(null);
@@ -593,6 +749,7 @@
   document.addEventListener("visibilitychange", () => {
     if (active) logEvent(isVisible() ? "visible" : "hidden");
     writeState(true);
+    syncPlay();
     if (document.visibilityState !== "visible") return;
     if (active) {
       holdScreen(); // स्क्रीन-लॉक ऐप के पीछे जाने पर छूट जाता है
