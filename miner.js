@@ -1,206 +1,87 @@
 // MNC टेस्टनेट माइनर — मुख्य UI लॉजिक
-// माइनिंग सिर्फ़ यूज़र के "माइनिंग शुरू करें" दबाने पर शुरू होती है।
 //
-// नियम: एक माइनर को 10 मिनट में एक ही ब्लॉक (50 MNC) मिलता है। इसलिए माइनर
-// एक ब्लॉक ढूँढते ही उसे अपने आप सर्वर को भेजता है, 10 मिनट रुकता है और फिर
-// अपने आप अगला ब्लॉक ढूँढता है, जब तक यूज़र "रोकें" न दबाए।
+// माइनिंग का नियम (supabase/sql/003_rounds.sql):
+//   - घड़ी 3 मिनट के राउंड में बँटी है, और हर राउंड 30-30 सेकंड के खानों में।
+//   - माइनर चालू हो तो वह हर खाने में एक "मैं हूँ" संकेत भेजता है।
+//   - जो सक्रिय वॉलेट राउंड के सभी खानों में मौजूद रहा, उसे हिस्सा मिलता है; राउंड का इनाम
+//     (50 MNC) सभी हिस्सेदारों में बराबर बँटता है। फ़ोन हो या लैपटॉप, सबका हिस्सा बराबर।
+//   - संख्याएँ config/chain.json से आती हैं; समय हमेशा सर्वर का गिना जाता है।
 //
-// नेटवर्क कॉल सिर्फ़ Supabase पर हैं:
-//   1. शुरू करते समय चेन का आख़िरी ब्लॉक और इस माइनर का पिछला इनाम पढ़ना (GET blocks)
-//   2. मिला हुआ ब्लॉक submit-block function को भेजना (POST)
-//   3. वॉलेट सक्रिय है या नहीं, यह wallet-status function से पूछना (GET)
+// चालू करना: "माइनिंग शुरू करें" पर PIN से हस्ताक्षर करके सर्वर से एक सत्र (token) लिया जाता है
+// (mining-session function)। फिर हर संकेत डेटाबेस के mnc_ping function को उसी token के साथ जाता है।
+// PIN और private key सिर्फ़ इस फ़ोन पर रहते हैं (wallet/vault.js)।
 //
-// वॉलेट: पता वॉलेट ऐप (wallet/) के localStorage से आता है, सिर्फ़ सार्वजनिक पता।
-// "माइनिंग शुरू करें" तभी चालू होता है जब सर्वर उस पते को active बताए।
-// मिले ब्लॉक localStorage में भी रहते हैं। hash की गणना worker.js में होती है।
+// माइनिंग सिर्फ़ यूज़र के बटन दबाने पर चलती है, और पेज खुला व स्क्रीन चालू रहने तक ही।
 
 "use strict";
 
 (function () {
-  const CONFIG = Object.assign(
-    {
-      difficulty: 5, minDifficulty: 5, maxDifficulty: 7,
-      supabaseUrl: "", supabaseKey: "", reward: 50, cooldownMinutes: 10,
-    },
-    window.MNC_CONFIG || {}
-  );
+  const CONFIG = Object.assign({ supabaseUrl: "", supabaseKey: "" }, window.MNC_CONFIG || {});
+  const Vault = window.MNCVault;
+  const Units = window.MNCUnits;
 
-  const STORAGE_KEY = "mnc_testnet_blocks";
-  const GENESIS_PREV = "0".repeat(64);
-  const RATE_WINDOW_MS = 2000;
-  const COOLDOWN_MS = CONFIG.cooldownMinutes * 60 * 1000;
-  const RETRY_MS = 30 * 1000;   // नेटवर्क की गड़बड़ी पर इतनी देर बाद दोबारा कोशिश
-  const MAX_FAIL_STREAK = 10;   // लगातार इतनी नाकामी पर माइनर रुक जाता है
+  const SESSION_KEY = "mnc_mining_session";
   const API = String(CONFIG.supabaseUrl || "").replace(/\/+$/, "");
   const API_HEADERS = { apikey: CONFIG.supabaseKey, Authorization: "Bearer " + CONFIG.supabaseKey };
-
-  // सर्वर के ये जवाब ब्लॉक की ग़लती नहीं हैं; ब्लॉक "भेजा नहीं गया" ही रहता है
-  const NOT_BLOCK_FAULT = ["server_error", "server_config", "too_early", "bad_miner", "cooldown", "method", "bad_json", "too_large", "wallet_inactive"];
-  // इन कारणों पर नई चेन के ऊपर दोबारा माइन करना ठीक है
-  const LOST_RACE = ["stale", "bad_prev_hash"];
+  const IDLE_REFRESH_MS = 30 * 1000;   // माइनर बंद हो तब राउंड की जानकारी कितनी बार ताज़ा हो
 
   const $ = (id) => document.getElementById(id);
   const el = {
     start: $("btn-start"),
     stop: $("btn-stop"),
-    clear: $("btn-clear"),
-    send: $("btn-send"),
-    sendResult: $("send-result"),
-    difficulty: $("difficulty"),
+    pinBox: $("pin-box"),
+    pin: $("mine-pin"),
     status: $("status"),
-    tries: $("stat-tries"),
-    rate: $("stat-rate"),
-    blocks: $("stat-blocks"),
-    list: $("block-list"),
-    empty: $("block-empty"),
     error: $("error"),
     gate: $("wallet-gate"),
+    roundBar: $("round-bar"),
+    roundLeft: $("round-left"),
+    slots: $("slots"),
+    roundNote: $("round-note"),
+    lastPeople: $("stat-people"),
+    lastShare: $("stat-share"),
+    myTotal: $("stat-total"),
+    list: $("reward-list"),
+    empty: $("reward-empty"),
   };
 
-  const fmt = new Intl.NumberFormat("en-IN");
-
-  // इनाम किस पते पर दर्ज हो: वॉलेट ऐप (wallet/) का सार्वजनिक पता; वॉलेट न हो तो ""।
-  // यहाँ सिर्फ़ पता पढ़ा जाता है; कुंजी या PIN से माइनर का कोई लेना-देना नहीं।
-  function minerAddress() {
-    try {
-      const w = JSON.parse(localStorage.getItem("mnc_wallet_pub") || "null");
-      return w && /^MNC[0-9a-f]{40}$/.test(w.address) ? w.address : "";
-    } catch (_) {
-      return "";
-    }
-  }
-
-  let worker = null;
+  let chain = null;             // config/chain.json
+  let walletStatus = "loading"; // "none" | "loading" | "active" | "revoked" | "not_found" | "unknown"
+  let active = false;           // यूज़र ने माइनर चालू किया है और रोका नहीं
   let starting = false;
-  let sending = false;
-  let active = false;   // यूज़र ने माइनर चालू किया है और रोका नहीं
-  let nextAt = 0;       // अगला चक्र कब शुरू होगा (ms); 0 = कोई इंतज़ार नहीं
-  let waitNote = "";
-  let failStreak = 0;
+  let info = null;              // सर्वर से आख़िरी जानकारी (mnc_ping / mnc_round_info)
+  let serverOffset = 0;         // सर्वर का समय - इस फ़ोन का समय (ms)
+  let lastPingAt = 0;
+  let lastInfoAt = 0;
+  let pinging = false;
+  let netError = false;
   let wakeLock = null;
-  let totalTries = 0;
-  let samples = [];   // हैश रेट के लिए हाल की प्रगति: {t, tries}
-  let blocks = loadBlocks();
-  // वॉलेट की स्थिति: "none" (वॉलेट नहीं), "loading", "active", "revoked", "not_found", "unknown"
-  let walletStatus = "loading";
+  let lastRoundSeen = null;
 
-  // ---------- localStorage ----------
-  function loadBlocks() {
-    try {
-      const raw = localStorage.getItem(STORAGE_KEY);
-      const list = raw ? JSON.parse(raw) : [];
-      return Array.isArray(list) ? list : [];
-    } catch (_) {
-      return [];
-    }
+  // ---------- वॉलेट ----------
+  // सिर्फ़ सार्वजनिक पता पढ़ा जाता है (wallet/ ऐप का localStorage)
+  function minerAddress() {
+    const pub = Vault.readPublic(localStorage);
+    return pub ? pub.address : "";
   }
 
-  function saveBlocks() {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(blocks));
-    } catch (_) {
-      showError("ब्लॉक सेव नहीं हो सका (localStorage उपलब्ध नहीं या भरा हुआ है)।");
-    }
-  }
-
-  // ब्लॉक की स्थिति: "pending" (भेजा नहीं गया), "accepted", "rejected"
-  const isPending = (b) => b.status !== "accepted" && b.status !== "rejected";
-
-  function markRejected(b, reason) {
-    b.status = "rejected";
-    b.reason = reason;
-  }
-
-  // ---------- Supabase ----------
-  async function readBlocks(query) {
-    if (!API || !CONFIG.supabaseKey) throw new Error("config");
-    const res = await fetch(API + "/rest/v1/blocks?" + query, { headers: API_HEADERS, cache: "no-store" });
-    if (!res.ok) throw new Error("http " + res.status);
-    const rows = await res.json();
-    if (!Array.isArray(rows)) throw new Error("format");
-    return rows;
-  }
-
-  // चेन का आख़िरी ब्लॉक; चेन खाली हो तो null
-  async function fetchTip() {
-    const rows = await readBlocks("select=*&order=idx.desc&limit=1");
-    return rows.length ? { index: Number(rows[0].idx), hash: String(rows[0].hash) } : null;
-  }
-
-  // इस माइनर को पिछला इनाम कब मिला (ms); कभी नहीं मिला तो null
-  async function fetchLastRewardTime(miner) {
-    const rows = await readBlocks(
-      "select=created_at&miner=eq." + encodeURIComponent(miner) + "&order=idx.desc&limit=1"
-    );
-    const t = rows.length ? Date.parse(rows[0].created_at) : NaN;
-    return Number.isFinite(t) ? t : null;
-  }
-
-  async function submitBlock(b, miner) {
-    const res = await fetch(API + "/functions/v1/submit-block", {
-      method: "POST",
-      headers: Object.assign({ "Content-Type": "application/json" }, API_HEADERS),
-      body: JSON.stringify({
-        idx: b.index,
-        prev_hash: b.prevHash,
-        hash: b.hash,
-        nonce: b.nonce,
-        difficulty: b.difficulty,
-        ts: b.timestamp,
-        data: b.data,
-        miner: b.data, // ब्लॉक उसी पते का है जिसके लिए वह माइन हुआ था
-        reward: CONFIG.reward,
-      }),
-    });
-    const body = await res.json(); // JSON न हो तो यहीं error, यानी सर्वर की गड़बड़ी
-    if (!body || typeof body.ok !== "boolean") throw new Error("format");
-    return body;
-  }
-
-  // सर्वर की चेन के हिसाब से लोकल ब्लॉक छाँटना।
-  // लौटाता है: वे "भेजे नहीं गए" ब्लॉक जो आख़िरी ब्लॉक के ऊपर सही क्रम में जुड़ते हैं।
-  function reconcile(tip) {
-    let base = tip || { index: -1, hash: GENESIS_PREV };
-    const chain = [];
-    for (const b of blocks) {
-      if (!isPending(b)) continue;
-      if (b.data !== minerAddress()) {
-        // पुराने संस्करण का, या किसी दूसरे वॉलेट के लिए बना ब्लॉक
-        markRejected(b, "यह ब्लॉक इस वॉलेट के पते के लिए नहीं बना था।");
-      } else if (tip && b.index === tip.index && b.hash === tip.hash) {
-        b.status = "accepted"; // यही ब्लॉक सर्वर पर आख़िरी है
-        delete b.reason;
-      } else if (b.index === base.index + 1 && b.prevHash === base.hash) {
-        chain.push(b);
-        base = b;
-      } else if (b.index <= base.index) {
-        markRejected(b, "चेन इस नंबर से आगे बढ़ चुकी है।");
-      } else {
-        markRejected(b, "यह चेन के आख़िरी ब्लॉक से नहीं जुड़ता।");
-      }
-    }
-    return { chain, tip: tip || { index: -1, hash: GENESIS_PREV } };
-  }
-
-  // ---------- वॉलेट की स्थिति ----------
   const GATE_TEXT = {
-    none: "पहले वॉलेट बनाएँ। ऊपर “वॉलेट” दबाएँ; माइनिंग उसके बाद चालू होगी।",
+    none: "पहले माइनर वॉलेट बनाएँ। ऊपर “वॉलेट” दबाएँ; माइनिंग उसके बाद चालू होगी।",
     loading: "वॉलेट की स्थिति जाँची जा रही है…",
     revoked: "यह वॉलेट रद्द कर दिया गया है, इसलिए इससे माइनिंग नहीं हो सकती।",
     not_found: "यह वॉलेट अभी सक्रिय नहीं है। ऊपर “वॉलेट” खोलें; वह वहाँ अपने आप सक्रिय हो जाएगा।",
     unknown: "वॉलेट की स्थिति नहीं मिल सकी। इंटरनेट जाँचें; पेज पर लौटते ही दोबारा जाँच होगी।",
   };
 
-  // सर्वर से पूछना कि यह पता सक्रिय है या नहीं (wallets टेबल publishable key से नहीं पढ़ी जा सकती)
   async function checkWallet() {
     const address = minerAddress();
     if (!address) {
       walletStatus = "none";
-      renderState();
+      render();
       return;
     }
     if (walletStatus !== "active") walletStatus = "loading";
-    renderState();
+    render();
     let next = "unknown";
     try {
       const res = await fetch(API + "/functions/v1/wallet-status?address=" + encodeURIComponent(address), {
@@ -211,137 +92,161 @@
     } catch (_) { /* इंटरनेट नहीं: "unknown" */ }
     if (minerAddress() !== address) return checkWallet(); // बीच में वॉलेट बदल गया
     walletStatus = next;
-    renderState();
+    if (next !== "active" && active) stop();
+    render();
   }
 
-  // ---------- UI ----------
-  function showError(msg) {
-    el.error.textContent = msg;
-    el.error.hidden = !msg;
+  // ---------- सत्र (token) ----------
+  function readSession() {
+    try {
+      const s = JSON.parse(localStorage.getItem(SESSION_KEY) || "null");
+      // ख़त्म होने से 10 मिनट पहले ही नया सत्र लें
+      if (s && s.address === minerAddress() && /^[0-9a-f]{64}$/.test(s.token) && s.expires > Date.now() + 10 * 60 * 1000) return s;
+    } catch (_) { /* नीचे */ }
+    return null;
   }
 
-  function showSendResult(msg, kind) {
-    el.sendResult.textContent = msg;
-    el.sendResult.className = "send-result" + (kind ? " " + kind : "");
-    el.sendResult.hidden = !msg;
+  function dropSession() {
+    try { localStorage.removeItem(SESSION_KEY); } catch (_) { /* कुछ नहीं */ }
   }
 
-  const clock = (t) => new Date(t).toLocaleTimeString("hi-IN", { hour: "2-digit", minute: "2-digit" });
-
-  function waitText(ms) {
-    const s = Math.ceil(ms / 1000);
-    return Math.floor(s / 60) + " मिनट " + (s % 60) + " सेकंड";
+  async function newSession(pin) {
+    const address = minerAddress();
+    const message = Vault.mineMessage(address, Date.now());
+    const signature = await Vault.sign(localStorage, pin, message); // PIN गलत हो तो code वाला Error
+    const res = await fetch(API + "/functions/v1/mining-session", {
+      method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json" }, API_HEADERS),
+      body: JSON.stringify({ address, message, signature }),
+    });
+    const body = await res.json();
+    if (!body || !body.ok) {
+      const err = new Error((body && body.reason) || "सर्वर ने सत्र नहीं दिया।");
+      err.server = body && body.code;
+      throw err;
+    }
+    const session = { address, token: body.token, expires: body.expires_at_ms };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    return session;
   }
 
-  function clampDifficulty(v) {
-    const n = Math.round(Number(v));
-    if (!Number.isFinite(n)) return CONFIG.difficulty;
-    return Math.min(CONFIG.maxDifficulty, Math.max(CONFIG.minDifficulty, n));
+  // ---------- डेटाबेस के function ----------
+  async function rpc(name, args) {
+    const res = await fetch(API + "/rest/v1/rpc/" + name, {
+      method: "POST",
+      headers: Object.assign({ "Content-Type": "application/json" }, API_HEADERS),
+      body: JSON.stringify(args),
+      cache: "no-store",
+    });
+    if (!res.ok) throw new Error("http " + res.status);
+    return res.json();
   }
 
-  function renderStats() {
-    el.tries.textContent = fmt.format(totalTries);
-    el.blocks.textContent = fmt.format(blocks.length);
+  function takeInfo(data) {
+    if (!data || !data.ok) return;
+    info = data;
+    serverOffset = Number(data.server_ms) - Date.now();
+    lastInfoAt = Date.now();
+    const round = data.last_round ? data.last_round.round_no : null;
+    if (round !== lastRoundSeen) {
+      if (lastRoundSeen !== null) { renderWalletBar(); loadRewards(); } // नया राउंड बँटा
+      lastRoundSeen = round;
+    }
   }
 
-  function renderRate() {
-    if (!worker || samples.length === 0) {
-      el.rate.textContent = "0";
+  async function refreshInfo() {
+    try {
+      takeInfo(await rpc("mnc_round_info", { p_address: minerAddress() || null }));
+      netError = false;
+    } catch (_) {
+      netError = true;
+    }
+    render();
+  }
+
+  // एक संकेत: "मैं इस खाने में मौजूद हूँ"
+  async function ping() {
+    if (!active || pinging) return;
+    const session = readSession();
+    if (!session) {
+      stop();
+      showError("माइनिंग का सत्र ख़त्म हो गया। PIN डालकर दोबारा “माइनिंग शुरू करें” दबाएँ।");
       return;
     }
-    const now = performance.now();
-    samples = samples.filter((s) => now - s.t <= RATE_WINDOW_MS);
-    const tries = samples.reduce((a, s) => a + s.tries, 0);
-    const ms = samples.reduce((a, s) => a + s.ms, 0);
-    el.rate.textContent = ms > 0 ? fmt.format(Math.round((tries * 1000) / ms)) : "0";
-  }
-
-  function blockItem(b) {
-    const li = document.createElement("li");
-    li.className = "block";
-
-    const head = document.createElement("div");
-    head.className = "block-head";
-    const title = document.createElement("strong");
-    title.textContent = "ब्लॉक #" + b.index;
-    const time = document.createElement("span");
-    time.textContent = new Date(b.timestamp).toLocaleString("hi-IN");
-    head.append(title, time);
-
-    const hash = document.createElement("code");
-    hash.className = "hash";
-    const zeros = document.createElement("b");
-    zeros.textContent = b.hash.slice(0, b.difficulty);
-    hash.append(zeros, b.hash.slice(b.difficulty));
-
-    const meta = document.createElement("div");
-    meta.className = "block-meta";
-    meta.textContent =
-      "nonce " + fmt.format(b.nonce) +
-      " · difficulty " + b.difficulty +
-      " · " + fmt.format(b.tries) + " प्रयास" +
-      " · " + (b.ms / 1000).toFixed(1) + " सेकंड";
-
-    const state = document.createElement("div");
-    if (b.status === "accepted") {
-      state.className = "block-state ok";
-      state.textContent = "✓ सर्वर ने स्वीकार किया";
-    } else if (b.status === "rejected") {
-      state.className = "block-state bad";
-      state.textContent = "✗ पुराना या गलत" + (b.reason ? " — " + b.reason : "");
-    } else {
-      state.className = "block-state";
-      state.textContent = "भेजा नहीं गया";
+    pinging = true;
+    lastPingAt = Date.now();
+    try {
+      const data = await rpc("mnc_ping", { p_address: session.address, p_token: session.token });
+      netError = false;
+      if (data && data.ok) {
+        takeInfo(data);
+        showError("");
+      } else if (data && data.code === "bad_session") {
+        dropSession();
+        stop();
+        showError("माइनिंग का सत्र मान्य नहीं रहा। PIN डालकर दोबारा “माइनिंग शुरू करें” दबाएँ।");
+      } else if (data && data.code === "wallet_inactive") {
+        stop();
+        checkWallet();
+      } else {
+        showError("सर्वर अभी तैयार नहीं है। थोड़ी देर बाद दोबारा कोशिश करें।");
+      }
+    } catch (_) {
+      netError = true; // अगला संकेत अपने आप जाएगा
     }
-
-    li.append(head, hash, meta, state);
-    return li;
+    pinging = false;
+    render();
   }
 
-  function renderBlocks() {
-    el.list.replaceChildren(...blocks.slice().reverse().map(blockItem));
-    el.empty.hidden = blocks.length > 0;
-    el.clear.hidden = blocks.length === 0;
-    renderSend();
-  }
-
-  function renderSend() {
-    const pending = blocks.filter(isPending).length;
-    el.send.textContent = sending ? "भेजा जा रहा है…" : pending ? "भेजें (" + fmt.format(pending) + ")" : "भेजें";
-    el.send.disabled = sending || pending === 0;
-  }
-
-  // स्थिति की पंक्ति और बटन; सब कुछ ऊपर के स्थिति-चरों से निकलता है
-  function renderState() {
-    el.start.disabled = active || walletStatus !== "active";
-    el.stop.disabled = !active;
-    el.gate.textContent = GATE_TEXT[walletStatus] || "";
-    el.gate.hidden = walletStatus === "active";
-    el.difficulty.disabled = active;
-
-    let text = "रुका हुआ";
-    if (worker) text = "माइनिंग चल रही है…";
-    else if (starting) text = "सर्वर से आख़िरी ब्लॉक लिया जा रहा है…";
-    else if (sending) text = "ब्लॉक सर्वर को भेजा जा रहा है…";
-    else if (active && nextAt) {
-      const s = Math.max(0, Math.ceil((nextAt - Date.now()) / 1000));
-      text = waitNote + " " + Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0") +
-        " में माइनिंग अपने आप शुरू होगी।";
+  // ---------- शुरू / रोकें ----------
+  async function start() {
+    if (active || starting || walletStatus !== "active") return;
+    showError("");
+    let session = readSession();
+    if (!session) {
+      const pin = el.pin.value;
+      if (!/^\d{6}$/.test(pin)) {
+        el.pinBox.hidden = false;
+        el.pin.focus();
+        showError("माइनिंग शुरू करने के लिए अपने माइनर वॉलेट का 6 अंकों का PIN लिखें।");
+        return;
+      }
+      starting = true;
+      render();
+      try {
+        session = await newSession(pin);
+      } catch (err) {
+        starting = false;
+        el.pin.value = "";
+        if (err && err.server === "wallet_inactive") checkWallet();
+        showError(err && err.message ? err.message : "सर्वर से संपर्क नहीं हो सका। इंटरनेट जाँचें।");
+        render();
+        return;
+      }
+      starting = false;
+      el.pin.value = "";
     }
-    el.status.textContent = text;
-    el.status.classList.toggle("on", active);
-    renderSend();
+    active = true;
+    holdScreen();
+    render();
+    ping();
+  }
+
+  function stop() {
+    active = false;
+    releaseScreen();
+    render();
   }
 
   // ---------- स्क्रीन चालू रखना ----------
-  // फ़ोन की स्क्रीन बंद होते ही ब्राउज़र माइनिंग और टाइमर रोक देता है, इसलिए
-  // माइनर चालू रहने तक स्क्रीन को जगाए रखते हैं (जहाँ ब्राउज़र यह सुविधा देता है)।
+  // फ़ोन की स्क्रीन बंद होते ही ब्राउज़र पेज के टाइमर रोक देता है; तब संकेत नहीं जाते और
+  // राउंड का हिस्सा छूट जाता है। इसलिए माइनर चालू रहने तक स्क्रीन जगाए रखते हैं।
   async function holdScreen() {
     try {
       if (!("wakeLock" in navigator) || wakeLock) return;
       wakeLock = await navigator.wakeLock.request("screen");
       wakeLock.addEventListener("release", () => { wakeLock = null; });
-    } catch (_) { /* सुविधा न मिले तो भी माइनर चलता रहे */ }
+    } catch (_) { /* सुविधा न मिले तो भी माइनर चले */ }
   }
 
   function releaseScreen() {
@@ -351,325 +256,170 @@
     }
   }
 
-  // ---------- माइनिंग का चक्र ----------
-  // "माइनिंग शुरू करें" एक बार दबाने पर माइनर तब तक चालू रहता है जब तक "रोकें" न दबे:
-  //   ब्लॉक ढूँढो -> भेजो -> 10 मिनट इंतज़ार -> फिर ढूँढो ...
-  function start() {
-    if (active || walletStatus !== "active") return;
-    showError("");
+  // ---------- स्क्रीन ----------
+  function showError(msg) {
+    el.error.textContent = msg;
+    el.error.hidden = !msg;
+  }
 
-    if (!window.Worker || !window.crypto || !window.crypto.subtle) {
-      showError(
-        "यह ब्राउज़र Web Worker या crypto.subtle नहीं दे रहा। पेज को http://localhost या https पर खोलें (file:// से नहीं)।"
+  const mnc = (units) => (chain ? Units.format(units, chain) : "…");
+  const mmss = (ms) => {
+    const s = Math.max(0, Math.ceil(ms / 1000));
+    return Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+  };
+
+  function render() {
+    el.start.disabled = active || starting || walletStatus !== "active";
+    el.stop.disabled = !active;
+    el.gate.textContent = GATE_TEXT[walletStatus] || "";
+    el.gate.hidden = walletStatus === "active";
+    el.pinBox.hidden = active || walletStatus !== "active" || !!readSession();
+    el.start.textContent = starting ? "शुरू हो रहा है…" : "माइनिंग शुरू करें";
+
+    let text = "रुका हुआ";
+    if (starting) text = "सत्र लिया जा रहा है…";
+    else if (active) text = netError ? "इंटरनेट नहीं मिल रहा; संकेत दोबारा भेजा जाएगा…" : "माइनिंग चल रही है: हर 30 सेकंड “मैं हूँ” का संकेत जा रहा है।";
+    el.status.textContent = text;
+    el.status.classList.toggle("on", active && !netError);
+
+    renderRound();
+  }
+
+  function renderRound() {
+    if (!info) {
+      el.roundLeft.textContent = "—";
+      el.roundBar.style.width = "0%";
+      el.slots.replaceChildren();
+      el.roundNote.textContent = "";
+      return;
+    }
+    const now = Date.now() + serverOffset;
+    const spr = Number(info.slots_per_round);
+    const hbMs = Number(info.heartbeat_seconds) * 1000;
+    const roundMs = Number(info.round_seconds) * 1000;
+    const ends = Number(info.round_ends_ms);
+    const fresh = now < ends; // जानकारी इसी राउंड की है
+    const left = fresh ? ends - now : roundMs - ((now - ends) % roundMs);
+
+    el.roundLeft.textContent = mmss(left);
+    el.roundBar.style.width = Math.min(100, ((roundMs - left) / roundMs) * 100).toFixed(1) + "%";
+
+    const mine = fresh ? Number(info.my_slots) : 0;
+    el.slots.replaceChildren(...Array.from({ length: spr }, (_, i) => {
+      const dot = document.createElement("span");
+      dot.className = "slot" + (i < mine ? " on" : "");
+      return dot;
+    }));
+
+    // अभी कौन सा खाना चल रहा है (0 से), और क्या इस राउंड का हिस्सा अब भी मिल सकता है
+    const k = Math.min(spr - 1, Math.floor((roundMs - left) / hbMs));
+    const nowDone = fresh && info.my_slot_now;
+    const possible = mine + (spr - k) - (nowDone ? 1 : 0);
+    let note;
+    if (!active) note = "माइनिंग शुरू करें; अगले पूरे राउंड से हिस्सा मिलेगा।";
+    else if (possible >= spr) note = "इस राउंड में आप पूरे समय मौजूद हैं। राउंड ख़त्म होने पर हिस्सा मिलेगा।";
+    else note = "इस राउंड में आप पूरे समय नहीं रहे (देर से जुड़े या संकेत छूटा)। अगला राउंड " + mmss(left) + " में; उससे हिस्सा मिलेगा।";
+    el.roundNote.textContent = note;
+
+    const last = info.last_round;
+    el.lastPeople.textContent = last ? String(last.participants) : "—";
+    el.lastShare.textContent = last ? mnc(last.share_units) : "—";
+    el.myTotal.textContent = mnc(info.my_total_round_units || 0);
+  }
+
+  // ---------- इनाम की सूची ----------
+  async function loadRewards() {
+    const address = minerAddress();
+    if (!address) {
+      el.list.replaceChildren();
+      el.empty.hidden = false;
+      return;
+    }
+    try {
+      const res = await fetch(
+        API + "/rest/v1/round_rewards?select=round_no,units,mining_rounds(started_at,participants)" +
+        "&address=eq." + encodeURIComponent(address) + "&order=round_no.desc&limit=10",
+        { headers: API_HEADERS, cache: "no-store" }
       );
-      return;
-    }
-    if (!minerAddress()) {
-      showError("पहले वॉलेट बनाएँ; इनाम उसी के पते पर दर्ज होगा।");
-      return;
-    }
-
-    el.difficulty.value = clampDifficulty(el.difficulty.value);
-    active = true;
-    failStreak = 0;
-    showSendResult("", "");
-    holdScreen();
-    cycle();
-  }
-
-  function stopWorker() {
-    if (worker) {
-      worker.terminate();
-      worker = null;
-    }
-    samples = [];
-    renderRate();
-  }
-
-  function stop() {
-    active = false;
-    nextAt = 0;
-    stopWorker();
-    releaseScreen();
-    renderState();
-  }
-
-  // ms बाद अगला चक्र; note स्थिति की पंक्ति में दिखता है
-  function schedule(ms, note) {
-    nextAt = Date.now() + Math.max(1000, ms);
-    waitNote = note;
-    renderState();
-  }
-
-  // लगातार बहुत बार नाकामी हो तो सर्वर पर बेकार बोझ न डालें
-  function failed(message) {
-    failStreak++;
-    if (failStreak >= MAX_FAIL_STREAK) {
-      stop();
-      showError(message + " लगातार " + MAX_FAIL_STREAK + " बार नाकामी के बाद माइनर रोक दिया गया।");
-      return true;
-    }
-    return false;
-  }
-
-  // एक चक्र: सर्वर की स्थिति देखो, फिर या तो इंतज़ार, या भेजना, या माइनिंग
-  async function cycle() {
-    if (!active || worker || starting || sending) return;
-    nextAt = 0;
-    showError("");
-    const miner = minerAddress();
-
-    starting = true;
-    renderState();
-    let state, lastReward;
-    try {
-      const got = await Promise.all([fetchTip(), fetchLastRewardTime(miner)]);
-      state = reconcile(got[0]);
-      lastReward = got[1];
-    } catch (_) {
-      starting = false;
-      if (!active) return renderState();
-      showError("सर्वर से चेन की जानकारी नहीं मिली। इंटरनेट जाँचें; माइनर अपने आप दोबारा कोशिश करेगा।");
-      schedule(RETRY_MS, "दोबारा कोशिश:");
-      return;
-    }
-    starting = false;
-    saveBlocks();
-    renderBlocks();
-    if (!active) return renderState();
-
-    // 10 मिनट का अंतराल अभी बाक़ी है: इंतज़ार
-    const wait = lastReward === null ? 0 : lastReward + COOLDOWN_MS - Date.now();
-    if (wait > 0) {
-      schedule(wait, "पिछला इनाम " + clock(lastReward) + " पर मिला था।");
-      return;
-    }
-
-    // पहले से कोई भेजने लायक ब्लॉक पड़ा हो तो नया माइन करने की जगह वही भेजें
-    if (state.chain.length) {
-      sendPending();
-      return;
-    }
-
-    try {
-      worker = new Worker("worker.js");
-    } catch (_) {
-      stop();
-      showError("Worker शुरू नहीं हो सका। पेज को लोकल सर्वर (http://localhost) से खोलें।");
-      return;
-    }
-    worker.onmessage = onWorkerMessage;
-    worker.onerror = (e) => {
-      stop();
-      showError("Worker में गड़बड़ी: " + (e.message || "अज्ञात"));
-    };
-    worker.postMessage({
-      type: "start",
-      difficulty: clampDifficulty(el.difficulty.value),
-      index: state.tip.index + 1,
-      prevHash: state.tip.hash,
-      // data में वॉलेट का पता जाता है, इसलिए पता ब्लॉक के hash में बँध जाता है:
-      // कोई और इस ब्लॉक को अपने पते से नहीं भेज सकता (सर्वर data === miner जाँचता है)।
-      data: miner,
-    });
-
-    samples = [];
-    renderState();
-  }
-
-  function onWorkerMessage(e) {
-    const msg = e.data;
-    if (msg.type === "progress") {
-      totalTries += msg.tries;
-      samples.push({ t: performance.now(), tries: msg.tries, ms: msg.ms });
-      renderStats();
-      renderRate();
-    } else if (msg.type === "block") {
-      // 10 मिनट में एक ही ब्लॉक मिल सकता है: खोज रोकें और इसे तुरंत भेजें
-      stopWorker();
-      msg.block.status = "pending";
-      blocks.push(msg.block);
-      saveBlocks();
-      renderStats();
-      renderBlocks();
-      sendPending();
-    } else if (msg.type === "error") {
-      stop();
-      showError("माइनिंग रुकी: " + msg.message);
-    }
-  }
-
-  // ---------- भेजना ----------
-  // सबसे पुराना भेजने लायक ब्लॉक भेजता है (10 मिनट में एक ही स्वीकार होता है)।
-  // माइनर चालू (active) हो तो नतीजे के हिसाब से अगला चक्र अपने आप तय होता है।
-  async function sendPending() {
-    if (sending) return;
-    const miner = minerAddress();
-    if (!miner) {
-      showSendResult("पहले वॉलेट बनाएँ।", "bad");
-      return;
-    }
-
-    sending = true;
-    renderState();
-
-    let outcome = "error";   // "accepted" | "cooldown" | "lost" | "rejected" | "error"
-    let message = "";
-    let retryMs = RETRY_MS;
-
-    try {
-      const chain = reconcile(await fetchTip()).chain;
-      if (!chain.length) {
-        outcome = "lost";
-        message = "चेन आगे बढ़ चुकी है; भेजने लायक ब्लॉक नहीं बचा।";
-      } else {
-        const b = chain[0];
-        const result = await submitBlock(b, miner);
-        if (result.ok) {
-          outcome = "accepted";
-          b.status = "accepted";
-          delete b.reason;
-          message = "सफल: ब्लॉक #" + b.index + " स्वीकार हुआ, " + CONFIG.reward + " MNC मिले।";
-          renderWalletBar();
-          // इसके ऊपर बने बाक़ी ब्लॉक अंतराल की वजह से नहीं जा सकते
-          for (const later of chain.slice(1)) markRejected(later, "10 मिनट में एक ही ब्लॉक स्वीकार होता है।");
-        } else if (result.code === "cooldown") {
-          outcome = "cooldown";
-          message = result.reason || "अभी 10 मिनट पूरे नहीं हुए।";
-          if (Number(result.retry_after_s) > 0) retryMs = Number(result.retry_after_s) * 1000;
-        } else if (result.code === "wallet_inactive") {
-          // वॉलेट सक्रिय नहीं रहा: माइनर रोकें, वरना वह बार-बार बेकार कोशिश करता रहेगा
-          outcome = "inactive";
-          message = result.reason || "यह वॉलेट सक्रिय नहीं है।";
-        } else if (NOT_BLOCK_FAULT.includes(result.code)) {
-          message = result.reason || "सर्वर ने ब्लॉक नहीं लिया।";
-        } else {
-          const reason = result.reason || "सर्वर ने कारण नहीं बताया।";
-          markRejected(b, reason);
-          for (const later of chain.slice(1)) markRejected(later, "इससे पहले वाला ब्लॉक ठुकरा दिया गया।");
-          outcome = LOST_RACE.includes(result.code) ? "lost" : "rejected";
-          message = LOST_RACE.includes(result.code)
-            ? "किसी और का ब्लॉक पहले पहुँच गया।"
-            : "ब्लॉक ठुकराया गया: " + reason;
-        }
-      }
-    } catch (_) {
-      message = "सर्वर से संपर्क नहीं हो सका।";
-    }
-
-    sending = false;
-    saveBlocks();
-    renderBlocks();
-
-    if (outcome === "inactive") {
-      stop();
-      showSendResult(message, "bad");
-      checkWallet();
-      return;
-    }
-
-    if (!active) {
-      // माइनर बंद है: सिर्फ़ नतीजा दिखाएँ
-      const hint = outcome === "error" ? " इंटरनेट जाँचकर “भेजें” दबाएँ।"
-        : outcome === "lost" || outcome === "rejected" ? " दोबारा “माइनिंग शुरू करें” दबाएँ।" : "";
-      showSendResult(message + hint, outcome === "accepted" ? "ok" : "bad");
-      renderState();
-      return;
-    }
-
-    if (outcome === "accepted") {
-      failStreak = 0;
-      showSendResult(message + " अगली माइनिंग " + clock(Date.now() + COOLDOWN_MS) + " पर अपने आप शुरू होगी।", "ok");
-      schedule(COOLDOWN_MS, "इनाम मिल गया।");
-    } else if (outcome === "cooldown") {
-      showSendResult(message, "bad");
-      schedule(retryMs, "अंतराल बाक़ी है।");
-    } else if (outcome === "lost") {
-      if (failed(message)) return;
-      showSendResult(message + " नई चेन पर दोबारा माइनिंग हो रही है।", "bad");
-      renderState();
-      cycle();
-    } else if (outcome === "rejected") {
-      if (failed(message)) return;
-      showSendResult(message + " दोबारा माइनिंग हो रही है।", "bad");
-      renderState();
-      cycle();
-    } else {
-      showSendResult(message + " माइनर अपने आप दोबारा कोशिश करेगा।", "bad");
-      schedule(RETRY_MS, "दोबारा कोशिश:");
-    }
+      if (!res.ok) throw new Error("http " + res.status);
+      const rows = await res.json();
+      el.list.replaceChildren(...rows.map((r) => {
+        const li = document.createElement("li");
+        li.className = "reward";
+        const amount = document.createElement("b");
+        amount.textContent = "+" + mnc(r.units) + " MNC";
+        const meta = document.createElement("span");
+        const m = r.mining_rounds || {};
+        meta.textContent = (m.started_at
+          ? new Date(m.started_at).toLocaleTimeString("hi-IN", { hour: "2-digit", minute: "2-digit" }) + " का राउंड"
+          : "राउंड") + (m.participants ? " · " + m.participants + " लोगों में बँटा" : "");
+        li.append(amount, meta);
+        return li;
+      }));
+      el.empty.hidden = rows.length > 0;
+    } catch (_) { /* इंटरनेट नहीं: पुरानी सूची रहने दें */ }
   }
 
   // ---------- वॉलेट की पट्टी ----------
-  // छोटा पता और बैलेंस; वॉलेट ऐप wallet/ पर खुलता है
   async function renderWalletBar() {
     const title = $("wallet-bar-title"), sub = $("wallet-bar-sub");
     const address = minerAddress();
     if (!address) {
       title.textContent = "वॉलेट बनाएँ";
-      sub.textContent = "माइनिंग का इनाम वॉलेट के पते पर दर्ज होता है";
+      sub.textContent = "माइनिंग का इनाम माइनर वॉलेट के पते पर आता है";
       return;
     }
     sub.textContent = address.slice(0, 8) + "…" + address.slice(-5);
     try {
-      const res = await fetch(API + "/rest/v1/rpc/mnc_balance", {
-        method: "POST",
-        headers: Object.assign({ "Content-Type": "application/json" }, API_HEADERS),
-        body: JSON.stringify({ addr: address }),
-        cache: "no-store",
-      });
-      if (!res.ok) throw new Error("http " + res.status);
-      title.textContent = fmt.format(Number(await res.json()) || 0) + " MNC";
+      const units = await rpc("mnc_balance_units", { addr: address });
+      title.textContent = mnc(units === null ? 0 : units) + " MNC";
     } catch (_) {
-      title.textContent = "वॉलेट"; // बैलेंस न मिले तो भी पट्टी काम की रहे
+      title.textContent = "माइनर वॉलेट";
     }
   }
 
-  // हर सेकंड: इंतज़ार की उलटी गिनती, और समय पूरा होते ही अगला चक्र।
-  // समय घड़ी से गिना जाता है, ताकि ब्राउज़र टाइमर धीमा कर दे तब भी देर न हो।
+  // ---------- घड़ी ----------
+  // हर सेकंड: उलटी गिनती; माइनर चालू हो तो हर कुछ सेकंड एक संकेत (एक खाने में 3 बार,
+  // ताकि नेटवर्क की छोटी रुकावट से खाना न छूटे; सर्वर एक खाने को एक ही बार गिनता है)।
   function tick() {
-    if (!active || !nextAt || worker || starting || sending) return;
-    if (Date.now() >= nextAt) cycle();
-    else renderState();
+    if (chain && active) {
+      const every = (Number(chain.heartbeat_seconds) * 1000) / 3;
+      if (Date.now() - lastPingAt >= every) ping();
+    } else if (!active && Date.now() - lastInfoAt >= IDLE_REFRESH_MS) {
+      lastInfoAt = Date.now();
+      refreshInfo();
+    }
+    renderRound();
   }
 
   // ---------- शुरुआत ----------
-  el.difficulty.min = CONFIG.minDifficulty;
-  el.difficulty.max = CONFIG.maxDifficulty;
-  el.difficulty.value = clampDifficulty(CONFIG.difficulty);
-  el.difficulty.addEventListener("change", () => {
-    el.difficulty.value = clampDifficulty(el.difficulty.value);
-  });
-
   el.start.addEventListener("click", start);
   el.stop.addEventListener("click", stop);
-  el.send.addEventListener("click", sendPending);
-  el.clear.addEventListener("click", () => {
-    if (!confirm("सेव किए गए सभी टेस्ट ब्लॉक मिटा दें?")) return;
-    stop();
-    blocks = [];
-    saveBlocks();
-    renderStats();
-    renderBlocks();
-    showSendResult("", "");
-  });
+  el.pin.addEventListener("keydown", (e) => { if (e.key === "Enter") start(); });
 
-  setInterval(tick, 1000);
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState !== "visible") return;
     if (active) {
       holdScreen(); // स्क्रीन-लॉक ऐप के पीछे जाने पर छूट जाता है
-      tick();
+      ping();
     } else {
-      // वॉलेट ऐप से लौटने पर: नया वॉलेट / नई स्थिति उठाएँ
       renderWalletBar();
       checkWallet();
+      refreshInfo();
     }
   });
 
-  renderState();
-  renderStats();
-  renderBlocks();
-  renderWalletBar();
-  checkWallet();
+  (async function boot() {
+    try {
+      chain = await Units.load("config/chain.json");
+    } catch (_) {
+      showError("सेटिंग (config/chain.json) नहीं मिली। इंटरनेट जाँचकर पेज दोबारा खोलें।");
+    }
+    render();
+    renderWalletBar();
+    checkWallet();
+    refreshInfo();
+    loadRewards();
+    setInterval(tick, 1000);
+  })();
 })();

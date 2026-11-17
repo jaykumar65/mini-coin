@@ -9,16 +9,10 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
   <link rel="apple-touch-icon" href="icons/icon-192.png">
 
-  <!-- कॉन्फ़िग: डिफ़ॉल्ट difficulty यहाँ बदलें (हैश की शुरुआत में ज़ीरो की संख्या) -->
+  <!-- Supabase: सिर्फ़ सार्वजनिक (publishable) key। Secret / service_role key यहाँ कभी न डालें।
+       माइनिंग की संख्याएँ (राउंड, इनाम) config/chain.json में हैं। -->
   <script>
     window.MNC_CONFIG = {
-      difficulty: 5,      // डिफ़ॉल्ट
-      minDifficulty: 5,   // सर्वर इससे कम difficulty वाला ब्लॉक नहीं लेता
-      cooldownMinutes: 10, // एक माइनर को इतने मिनट में एक ही ब्लॉक (सर्वर यही लागू करता है)
-      maxDifficulty: 7,
-      reward: 50,
-
-      // Supabase: सिर्फ़ सार्वजनिक (publishable) key। Secret / service_role key यहाँ कभी न डालें।
       supabaseUrl: "https://gaddknalbfgzilndmfyf.supabase.co",
       supabaseKey: "sb_publishable_OUFXENQa8Rl6NR_StPFpKg_dP7vnHOB"
     };
@@ -217,6 +211,34 @@
     .hash b { color: var(--accent); }
     .empty { color: var(--muted); margin: 0; padding: 8px 0; }
 
+    .pin-box { margin-top: 14px; }
+    .pin-box label { display: block; font-weight: 600; margin-bottom: 6px; }
+    .pin-box input {
+      width: 100%;
+      min-height: 52px;
+      padding: 0 14px;
+      font: inherit;
+      font-size: 1.15rem;
+      letter-spacing: 0.12em;
+      color: var(--text);
+      background: var(--bg);
+      border: 1px solid var(--line);
+      border-radius: 10px;
+    }
+    .pin-box small { display: block; color: var(--muted); margin-top: 6px; }
+
+    .round-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+    .round-left { font-size: 1.6rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+    .bar { height: 10px; margin: 10px 0 12px; border-radius: 999px; background: var(--bg); border: 1px solid var(--line); overflow: hidden; }
+    .bar span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.9s linear; }
+    .slots { display: flex; gap: 8px; margin-bottom: 10px; }
+    .slot { flex: 1; height: 14px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); }
+    .slot.on { background: var(--ok); border-color: var(--ok); }
+
+    .reward { border-top: 1px solid var(--line); padding: 10px 0; display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .reward b { color: var(--ok); font-variant-numeric: tabular-nums; }
+    .reward span { color: var(--muted); font-size: 0.85rem; }
+
     [hidden] { display: none !important; }
   </style>
 </head>
@@ -225,7 +247,7 @@
 
   <main>
     <h1>MNC टेस्टनेट माइनर</h1>
-    <p class="sub">SHA-256 proof-of-work का सिमुलेशन। माइनिंग सिर्फ़ आपके बटन दबाने पर चलती है और इसी डिवाइस पर होती है। एक वॉलेट को 10 मिनट में एक ब्लॉक (50 MNC) मिलता है। एक बार शुरू करने पर माइनर हर 10 मिनट बाद अपने आप अगला ब्लॉक ढूँढता है, जब तक आप “रोकें” न दबाएँ। इसके लिए यह पेज खुला और स्क्रीन चालू रहनी चाहिए।</p>
+    <p class="sub">माइनिंग 3-3 मिनट के राउंड में होती है। हर राउंड का इनाम (50 MNC) उन सब में बराबर बँटता है जो पूरे 3 मिनट माइनर चालू रखकर मौजूद रहे, चाहे फ़ोन से हों या लैपटॉप से। तेज़ फ़ोन का कोई अलग फ़ायदा नहीं। इसके लिए यह पेज खुला और स्क्रीन चालू रहनी चाहिए।</p>
 
     <!-- इंस्टॉल: बटन सिर्फ़ beforeinstallprompt मिलने पर दिखता है, वरना संकेत -->
     <div id="install" class="install">
@@ -233,29 +255,29 @@
       <p id="install-hint">ब्राउज़र मेनू से 'Add to Home screen' चुनें।</p>
     </div>
 
-    <!-- वॉलेट की पट्टी: वॉलेट एक अलग ऐप है (wallet/ फ़ोल्डर) -->
+    <!-- वॉलेट की पट्टी: माइनर वॉलेट एक अलग ऐप है (wallet/ फ़ोल्डर) -->
     <a id="wallet-bar" class="wallet-bar" href="wallet/">
       <span class="wallet-bar-coin" aria-hidden="true">M</span>
       <span class="wallet-bar-text">
         <b id="wallet-bar-title">वॉलेट बनाएँ</b>
-        <small id="wallet-bar-sub">माइनिंग का इनाम वॉलेट के पते पर दर्ज होता है</small>
+        <small id="wallet-bar-sub">माइनिंग का इनाम माइनर वॉलेट के पते पर आता है</small>
       </span>
       <span class="wallet-bar-go" aria-hidden="true">›</span>
     </a>
 
     <section class="card">
-      <div class="field">
-        <label for="difficulty">Difficulty
-          <small>हैश की शुरुआत में ज़ीरो की संख्या</small>
-        </label>
-        <input id="difficulty" type="number" inputmode="numeric" step="1">
-      </div>
-
       <!-- माइनिंग सिर्फ़ सक्रिय वॉलेट से; वरना यहाँ कारण दिखता है और बटन बंद रहता है -->
       <p id="wallet-gate" class="gate" role="status" hidden></p>
 
+      <!-- सत्र न हो तो PIN (हस्ताक्षर इसी फ़ोन पर होता है; PIN कहीं नहीं जाता) -->
+      <div id="pin-box" class="pin-box" hidden>
+        <label for="mine-pin">माइनर वॉलेट का PIN (6 अंक)</label>
+        <input id="mine-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" pattern="\d{6}">
+        <small>एक बार डालने पर 12 घंटे तक दोबारा नहीं पूछा जाएगा। यह PIN सिर्फ़ इस फ़ोन की सुरक्षा के लिए है, असली सुरक्षा सर्वर पर है।</small>
+      </div>
+
       <div class="actions">
-        <button id="btn-start" class="primary" type="button">माइनिंग शुरू करें</button>
+        <button id="btn-start" class="primary" type="button" disabled>माइनिंग शुरू करें</button>
         <button id="btn-stop" type="button" disabled>रोकें</button>
       </div>
 
@@ -263,36 +285,41 @@
       <p id="error" class="error" role="alert" hidden></p>
     </section>
 
+    <section class="card" aria-label="चल रहा राउंड">
+      <div class="round-head">
+        <h2>चल रहा राउंड</h2>
+        <span><span id="round-left" class="round-left">—</span> <small class="note">बाक़ी</small></span>
+      </div>
+      <div class="bar"><span id="round-bar"></span></div>
+      <div id="slots" class="slots" aria-label="इस राउंड में आपके संकेत"></div>
+      <p id="round-note" class="note"></p>
+    </section>
+
     <section class="stats" aria-label="आँकड़े">
       <div class="stat">
-        <div id="stat-tries" class="num">0</div>
-        <div class="label">कुल प्रयास <span>(tries)</span></div>
+        <div id="stat-people" class="num">—</div>
+        <div class="label">पिछले राउंड में <span>हिस्सेदार</span></div>
       </div>
       <div class="stat">
-        <div id="stat-rate" class="num">0</div>
-        <div class="label">हैश रेट <span>(hashes/sec)</span></div>
+        <div id="stat-share" class="num">—</div>
+        <div class="label">हर एक को <span>(MNC)</span></div>
       </div>
       <div class="stat">
-        <div id="stat-blocks" class="num">0</div>
-        <div class="label">मिले ब्लॉक <span>(blocks)</span></div>
+        <div id="stat-total" class="num">—</div>
+        <div class="label">आपकी कुल कमाई <span>(राउंड से, MNC)</span></div>
       </div>
     </section>
 
     <section class="card">
-      <div class="list-head">
-        <h2>मिले हुए ब्लॉक</h2>
-        <button id="btn-clear" type="button" hidden>सूची साफ़ करें</button>
-      </div>
-      <p class="note">ब्लॉक मिलते ही अपने आप टेस्टनेट सर्वर को भेजा जाता है और इस ब्राउज़र के localStorage में भी रहता है। भेजना अटक जाए तो “भेजें” दबाएँ। यह केवल टेस्ट के लिए है, असली सुरक्षा नहीं है।</p>
-      <div class="send">
-        <button id="btn-send" class="primary" type="button" disabled>भेजें</button>
-        <p id="send-result" class="send-result" aria-live="polite" hidden></p>
-      </div>
-      <p id="block-empty" class="empty">अभी तक कोई ब्लॉक नहीं मिला।</p>
-      <ul id="block-list"></ul>
+      <h2>आपके हाल के इनाम</h2>
+      <p class="note">इनाम आपके माइनर वॉलेट में आता है। उसे खर्च करने या किसी को देने के लिए माइनर वॉलेट से अपने <a href="pay/" style="color:var(--accent)">MNC Pay वॉलेट</a> में भेजें।</p>
+      <p id="reward-empty" class="empty">अभी तक कोई इनाम नहीं मिला।</p>
+      <ul id="reward-list"></ul>
     </section>
   </main>
 
+  <script src="config/units.js"></script>
+  <script src="wallet/vault.js"></script>
   <script src="miner.js"></script>
 
   <!-- PWA: service worker रजिस्ट्रेशन और "ऐप इंस्टॉल करें" बटन -->
