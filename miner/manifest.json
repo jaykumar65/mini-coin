@@ -1,0 +1,19 @@
+{
+  "id": "/miner/",
+  "name": "MiniCoin Miner (TESTNET)",
+  "short_name": "MNC Miner",
+  "description": "MNC टेस्टनेट का माइनर: 3-3 मिनट के राउंड। यह टेस्टनेट है, इसका कोई मूल्य नहीं।",
+  "lang": "hi",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#14161c",
+  "theme_color": "#14161c",
+  "icons": [
+    { "src": "../icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "../icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "../icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "../icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
