@@ -1,4 +1,5 @@
-// MiniCoin होम — वॉलेट का छोटा स्टेटस और "ऐप इंस्टॉल करें"
+// MiniCoin होम — वॉलेट का छोटा स्टेटस और service worker
+// (ऐप इंस्टॉल अपने-अपने पेज से होते हैं: /miner/?install=1, /pay/?install=1)
 //
 // पता माइनर वॉलेट (wallet/vault.js) के localStorage से पढ़ा जाता है; private key या PIN नहीं।
 // स्थिति wallet-status Edge Function से आती है (active / revoked / not_found)। सिर्फ़ पढ़ना है।
@@ -70,27 +71,4 @@
     });
   }
 
-  const button = $("btn-install");
-  const hint = $("install-hint");
-  let deferred = null;
-  const standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
-  if (standalone) {
-    $("install").hidden = true;
-  } else {
-    window.addEventListener("beforeinstallprompt", (e) => {
-      e.preventDefault();
-      deferred = e;
-      button.hidden = false;
-      hint.hidden = true;
-    });
-    button.addEventListener("click", () => {
-      if (!deferred) return;
-      const p = deferred;
-      deferred = null;
-      button.hidden = true;
-      p.prompt();
-      p.userChoice.then((c) => { if (c.outcome !== "accepted") hint.hidden = false; });
-    });
-    window.addEventListener("appinstalled", () => { $("install").hidden = true; });
-  }
 })();

@@ -115,6 +115,7 @@
     .tile small { display: block; color: var(--muted); font-size: 0.9rem; }
     .tile .go { margin-left: auto; color: var(--muted); font-size: 1.6rem; }
 
+    .download + .download { margin-top: 12px; }
     .download {
       display: flex;
       align-items: center;
@@ -203,10 +204,15 @@
       <span class="go" aria-hidden="true">↓</span>
     </a>
 
-    <div id="install" class="install">
-      <button id="btn-install" type="button" hidden>ऐप इंस्टॉल करें</button>
-      <p id="install-hint">ऐप की तरह खोलने के लिए ब्राउज़र मेनू से 'Add to Home screen' चुनें।</p>
-    </div>
+    <!-- माइनर: अलग ऐप। इंस्टॉल उसी के पेज (/miner/) से होता है। -->
+    <a class="download" href="/miner/?install=1">
+      <img src="/icons/icon-192.png" alt="" width="52" height="52">
+      <span>
+        <b>माइनिंग ऐप इंस्टॉल करें</b>
+        <small>MNC Miner: 3-3 मिनट के राउंड में माइनिंग। फ़ोन में अलग ऐप की तरह।</small>
+      </span>
+      <span class="go" aria-hidden="true">↓</span>
+    </a>
     <p class="reinstall">अगर पुराना आइकन काम न करे, तो ऐप फिर से इंस्टॉल करें।</p>
   </main>
 
