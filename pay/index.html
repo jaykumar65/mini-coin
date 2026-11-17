@@ -92,6 +92,18 @@
       font-size: 0.9rem;
     }
 
+    .get-app {
+      margin: 0 0 18px;
+      padding: 14px 16px;
+      background: var(--card);
+      border: 1px solid var(--accent);
+      border-radius: 14px;
+    }
+    .get-app h2 { margin: 0 0 4px; font-size: 1rem; }
+    .get-app .btn.wide { margin-top: 8px; min-height: 52px; font-size: 1.05rem; }
+    .get-app .note { margin: 8px 0 0; }
+    .get-app .msg { margin: 8px 0 0; }
+
     .addr-row { display: flex; align-items: center; gap: 10px; }
     .coin {
       display: grid;
@@ -224,13 +236,22 @@
   <div class="banner" role="note">⚠ यह टेस्टनेट है, इसका कोई मूल्य नहीं।</div>
 
   <header class="topbar">
-    <a href="../" aria-label="माइनर पर जाएँ">←</a>
+    <a href="../" aria-label="होम पर जाएँ">←</a>
     <h1>MNC Pay</h1>
     <span></span>
   </header>
 
   <main>
     <span class="chip">MNC टेस्टनेट · लेन-देन वाला वॉलेट</span>
+
+    <!-- डाउनलोड (इंस्टॉल): ऐप की तरह खुला हो तो यह पूरा हिस्सा छिपा रहता है -->
+    <section id="get-app" class="get-app" aria-labelledby="get-app-title">
+      <h2 id="get-app-title">MNC Pay को ऐप की तरह रखें</h2>
+      <button id="btn-get-app" class="btn primary wide" type="button" hidden>वॉलेट डाउनलोड करें</button>
+      <p id="get-app-android" class="note" hidden>“वॉलेट डाउनलोड करें” बटन नहीं दिखा? Chrome के ऊपर दाईं ओर ⋮ दबाएँ और “Add to Home screen” या “ऐप इंस्टॉल करें” चुनें।</p>
+      <p id="get-app-ios" class="note" hidden>iPhone पर: Safari में नीचे Share बटन (□↑) दबाएँ, फिर “Add to Home Screen” चुनें।</p>
+      <p id="get-app-done" class="msg ok" hidden>MNC Pay इंस्टॉल हो गया। अब फ़ोन की होम स्क्रीन पर “MNC Pay” आइकन से खोलें।</p>
+    </section>
 
     <!-- वॉलेट नहीं है -->
     <section id="wallet-none" class="card">
@@ -352,6 +373,53 @@
         navigator.serviceWorker.register("sw.js").catch(function () {});
       });
     }
+
+    // "वॉलेट डाउनलोड करें": ब्राउज़र का इंस्टॉल डिब्बा (Android Chrome), वरना हाथ से करने का तरीका।
+    // होम पेज का बटन यहाँ ?install=1 के साथ लाता है।
+    (function () {
+      var box = document.getElementById("get-app");
+      var button = document.getElementById("btn-get-app");
+      var android = document.getElementById("get-app-android");
+      var ios = document.getElementById("get-app-ios");
+      var done = document.getElementById("get-app-done");
+      var deferred = null;
+
+      var standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone === true;
+      if (standalone) { box.hidden = true; return; } // पहले से ऐप की तरह खुला है
+
+      var isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+        (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+      if (isIOS) ios.hidden = false;
+      else android.hidden = false; // इंस्टॉल डिब्बा मिलते ही यह छिप जाता है
+
+      window.addEventListener("beforeinstallprompt", function (e) {
+        e.preventDefault();
+        deferred = e;
+        button.hidden = false;
+        android.hidden = true;
+      });
+
+      button.addEventListener("click", function () {
+        if (!deferred) return;
+        var p = deferred;
+        deferred = null;
+        button.hidden = true;
+        p.prompt();
+        p.userChoice.then(function (choice) {
+          if (choice.outcome !== "accepted") android.hidden = false;
+        });
+      });
+
+      window.addEventListener("appinstalled", function () {
+        deferred = null;
+        button.hidden = true;
+        android.hidden = true;
+        ios.hidden = true;
+        done.hidden = false;
+      });
+
+      if (/[?&]install=1\b/.test(location.search)) box.scrollIntoView({ block: "start" });
+    })();
   </script>
 </body>
 </html>
