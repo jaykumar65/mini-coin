@@ -111,6 +111,7 @@
       cursor: pointer;
       touch-action: manipulation;
     }
+    #btn-activate { margin-bottom: 12px; }
     button.primary { width: 100%; background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
     button.small { min-height: 44px; padding: 0 14px; font-weight: 600; font-size: 0.9rem; }
     button.danger { color: var(--warn-text); }
@@ -129,7 +130,6 @@
       margin-bottom: 10px;
       user-select: all;
     }
-    .mono.big { font-size: 1.6rem; letter-spacing: 0.2em; text-align: center; color: var(--accent); }
 
     .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
     .row h2 { margin: 0; flex: 1; }
@@ -153,7 +153,8 @@
     details { margin-bottom: 10px; }
     summary { cursor: pointer; color: var(--muted); font-size: 0.9rem; padding: 6px 0; }
 
-    .link { display: block; text-align: center; color: var(--accent); font-weight: 600; padding: 12px; }
+    .link { display: block; text-align: center; color: var(--muted); font-weight: 600; padding: 14px; margin-bottom: 16px; border-radius: 12px; border: 1px solid var(--line); text-decoration: none; }
+    .link.ready { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
   </style>
 </head>
 <body>
@@ -161,14 +162,14 @@
 
   <main>
     <h1>MNC Wallet (TESTNET)</h1>
-    <p class="sub">आपका वॉलेट इसी फ़ोन पर बनता और रहता है। माइनिंग सिर्फ़ सक्रिय वॉलेट से होती है, और वॉलेट इनवाइट कोड से सक्रिय होता है।</p>
+    <p class="sub">आपका वॉलेट इसी फ़ोन पर बनता और रहता है। वॉलेट बनाते ही वह अपने आप सक्रिय हो जाता है, और माइनिंग का इनाम इसी के पते पर दर्ज होता है।</p>
 
     <p class="warn">यह सिर्फ़ टेस्ट के लिए है। 12 शब्दों वाला बैकअप अभी नहीं है, इसलिए फ़ोन बदलने पर यह वॉलेट खो सकता है।</p>
 
     <!-- वॉलेट नहीं है -->
     <section id="view-none" class="card" hidden>
       <h2>वॉलेट बनाएँ</h2>
-      <p class="note">6 अंकों का PIN चुनें। इनवाइट बनाते समय यही PIN पूछा जाएगा। PIN भूल गए तो वॉलेट नहीं खुलेगा।</p>
+      <p class="note">6 अंकों का PIN चुनें और याद रखें। आगे MNC भेजते समय यही PIN पूछा जाएगा; PIN भूल गए तो वॉलेट नहीं खुलेगा।</p>
       <label for="new-pin">नया PIN (6 अंक)</label>
       <input id="new-pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" pattern="\d{6}">
       <label for="new-pin2">PIN दोबारा लिखें</label>
@@ -186,8 +187,12 @@
           <span id="status" class="pill" aria-live="polite">जाँच हो रही है…</span>
         </div>
         <p id="status-note" class="note" hidden></p>
+        <button id="btn-activate" class="primary" type="button" hidden>वॉलेट सक्रिय करें</button>
+        <p id="activate-msg" class="msg" role="status" hidden></p>
         <button id="btn-recheck" class="small" type="button">दोबारा जाँचें</button>
       </section>
+
+      <a id="link-miner" class="link" href="../">माइनर खोलें ›</a>
 
       <section class="card">
         <h2>आपका पता</h2>
@@ -204,31 +209,6 @@
         <p class="note">पता और public key सार्वजनिक हैं; इन्हें किसी को भी दे सकते हैं। Private key इस फ़ोन से बाहर नहीं जाती।</p>
         <p id="copy-msg" class="msg" role="status" hidden></p>
       </section>
-
-      <section id="box-register" class="card" hidden>
-        <h2>रजिस्टर करें</h2>
-        <p class="note">किसी सक्रिय सदस्य से इनवाइट कोड लें। एक कोड एक ही बार काम करता है।</p>
-        <label for="invite-code">इनवाइट कोड</label>
-        <input id="invite-code" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" maxlength="32">
-        <button id="btn-register" class="primary" type="button">रजिस्टर करें</button>
-        <p id="register-msg" class="msg" role="status" hidden></p>
-      </section>
-
-      <section id="box-invite" class="card" hidden>
-        <h2>इनवाइट बनाएँ</h2>
-        <p class="note">हर महीने 2 इनवाइट कोड बना सकते हैं। कोड सिर्फ़ उसी को दें जिसे आप जानते हैं।</p>
-        <label for="pin">अपना PIN (6 अंक)</label>
-        <input id="pin" type="password" inputmode="numeric" autocomplete="off" maxlength="6" pattern="\d{6}">
-        <button id="btn-invite" class="primary" type="button">इनवाइट बनाएँ</button>
-        <p class="msg">यह PIN सिर्फ़ इस फ़ोन की सुरक्षा के लिए है, असली सुरक्षा सर्वर पर है।</p>
-        <p id="invite-msg" class="msg" role="status" hidden></p>
-        <div id="invite-result" hidden>
-          <code id="invite-new-code" class="mono big"></code>
-          <button id="btn-copy-invite" class="small" type="button">कोड कॉपी करें</button>
-        </div>
-      </section>
-
-      <a class="link" href="../">माइनर खोलें ›</a>
 
       <section class="card">
         <h2>वॉलेट हटाना</h2>

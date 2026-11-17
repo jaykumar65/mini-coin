@@ -187,14 +187,9 @@
     return bytesToBase64(new Uint8Array(await subtle.sign(SIGN, key, enc.encode(message))));
   }
 
-  // create-invite के लिए संदेश। सर्वर (supabase/functions/create-invite) यही रूप जाँचता है।
-  function inviteMessage(address, ts) {
-    return "MNC-INVITE-V1|" + address + "|" + ts;
-  }
-
   root.MNCVault = {
     PUB_KEY, MAX_FAILS, LOCK_MS, PBKDF2_ITERATIONS,
-    readPublic, createWallet, removeWallet, lockState, sign, inviteMessage,
+    readPublic, createWallet, removeWallet, lockState, sign,
     deriveAddress, toHex, bytesToBase64, base64ToBytes,
   };
 })(typeof globalThis !== "undefined" ? globalThis : self);

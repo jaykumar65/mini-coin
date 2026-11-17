@@ -1,9 +1,9 @@
 // MNC Wallet (TESTNET) — स्क्रीन का लॉजिक
 //
-// काम: वॉलेट बनाना (PIN के साथ), पता और स्थिति दिखाना, इनवाइट कोड से रजिस्टर करना,
-// और सक्रिय वॉलेट के लिए नया इनवाइट बनाना (PIN से हस्ताक्षर करके)।
-// कुंजी और PIN का काम vault.js में है। सर्वर को सिर्फ़ पता, public key, इनवाइट कोड
-// और हस्ताक्षर जाते हैं; private key और PIN कभी नहीं।
+// काम: वॉलेट बनाना (PIN के साथ), उसे सर्वर पर रजिस्टर करके सक्रिय करना (अपने आप,
+// कोई निमंत्रण कोड नहीं), और पता व स्थिति दिखाना।
+// कुंजी और PIN का काम vault.js में है। सर्वर को सिर्फ़ पता और public key जाते हैं;
+// private key और PIN कभी नहीं।
 
 "use strict";
 
@@ -20,16 +20,15 @@
     address: $("address"), copyAddress: $("btn-copy-address"),
     keyB64: $("key-b64"), keyHex: $("key-hex"), copyKey: $("btn-copy-key"),
     status: $("status"), statusNote: $("status-note"), recheck: $("btn-recheck"),
-    registerBox: $("box-register"), code: $("invite-code"), register: $("btn-register"), registerMsg: $("register-msg"),
-    inviteBox: $("box-invite"), pin: $("pin"), invite: $("btn-invite"), inviteMsg: $("invite-msg"),
-    inviteResult: $("invite-result"), inviteCode: $("invite-new-code"), copyInvite: $("btn-copy-invite"),
+    activate: $("btn-activate"), activateMsg: $("activate-msg"),
+    miner: $("link-miner"),
     remove: $("btn-remove"),
   };
 
   const STATUS_TEXT = {
-    active: ["सक्रिय", "ok", "यह वॉलेट सक्रिय है। आप माइनिंग कर सकते हैं और दूसरों को इनवाइट दे सकते हैं।"],
+    active: ["सक्रिय", "ok", "यह वॉलेट सक्रिय है। अब आप माइनिंग कर सकते हैं।"],
     revoked: ["रद्द", "bad", "यह वॉलेट रद्द कर दिया गया है। इससे माइनिंग नहीं हो सकती।"],
-    not_found: ["सक्रिय नहीं", "bad", "यह वॉलेट अभी रजिस्टर नहीं है। नीचे इनवाइट कोड डालकर रजिस्टर करें।"],
+    not_found: ["सक्रिय नहीं", "bad", "यह वॉलेट अभी सक्रिय नहीं हुआ। नीचे “वॉलेट सक्रिय करें” दबाएँ।"],
     unknown: ["पता नहीं", "", "स्थिति नहीं मिल सकी। इंटरनेट जाँचकर “दोबारा जाँचें” दबाएँ।"],
     loading: ["जाँच हो रही है…", "", ""],
   };
@@ -37,6 +36,7 @@
   let wallet = Vault.readPublic(localStorage); // { address, publicKey, publicKeyHex } या null
   let status = "loading";
   let busy = false;
+  let triedActivate = false; // इस बार पेज खुलने पर अपने आप सक्रिय करने की कोशिश हो चुकी
 
   function say(node, text, kind) {
     node.textContent = text;
@@ -53,8 +53,6 @@
     return body;
   }
 
-  const post = (name, data) => call(name, { method: "POST", body: JSON.stringify(data) });
-
   // ---------- स्क्रीन ----------
   function render() {
     el.none.hidden = !!wallet;
@@ -70,26 +68,11 @@
     el.status.className = "pill" + (kind ? " " + kind : "");
     el.statusNote.textContent = note;
     el.statusNote.hidden = !note;
-    el.recheck.disabled = status === "loading";
+    el.recheck.disabled = busy || status === "loading";
 
-    el.registerBox.hidden = status !== "not_found";
-    el.inviteBox.hidden = status !== "active";
-    el.register.disabled = busy;
-    renderLock();
-  }
-
-  // गलत PIN की रुकावट: बटन बंद और उलटी गिनती
-  function renderLock() {
-    if (!wallet) return;
-    const lock = Vault.lockState(localStorage);
-    el.invite.disabled = busy || lock.locked;
-    el.pin.disabled = lock.locked;
-    if (lock.locked) {
-      say(el.inviteMsg, "5 बार गलत PIN डाला गया। " + Math.ceil(lock.waitMs / 1000) + " सेकंड बाद कोशिश करें।", "bad");
-    } else if (el.inviteMsg.dataset.lock === "1") {
-      say(el.inviteMsg, "", "");
-    }
-    el.inviteMsg.dataset.lock = lock.locked ? "1" : "";
+    el.activate.hidden = status !== "not_found";
+    el.activate.disabled = busy;
+    el.miner.classList.toggle("ready", status === "active");
   }
 
   async function refreshStatus() {
@@ -105,14 +88,40 @@
     if (!wallet || wallet.address !== address) return;
     status = next;
     render();
+    // वॉलेट बना है पर सर्वर पर दर्ज नहीं हुआ (जैसे बनाते समय इंटरनेट नहीं था): एक बार अपने आप कोशिश
+    if (status === "not_found" && !triedActivate) activate();
   }
 
-  async function copyText(text, node, done) {
+  // ---------- सक्रिय करना ----------
+  // सर्वर को सिर्फ़ पता और public key जाते हैं। कोई कोड या PIN नहीं लगता।
+  async function activate() {
+    if (busy || !wallet) return;
+    triedActivate = true;
+    busy = true;
+    render();
+    say(el.activateMsg, "वॉलेट सक्रिय हो रहा है…", "");
+    let ok = false;
+    try {
+      const r = await call("register", {
+        method: "POST",
+        body: JSON.stringify({ address: wallet.address, public_key: wallet.publicKey }),
+      });
+      ok = r.ok || r.code === "already_registered";
+      say(el.activateMsg, ok ? "" : "सक्रिय नहीं हुआ: " + (r.reason || "सर्वर ने कारण नहीं बताया।"), ok ? "" : "bad");
+    } catch (_) {
+      say(el.activateMsg, "सर्वर से संपर्क नहीं हो सका। इंटरनेट जाँचकर “वॉलेट सक्रिय करें” दबाएँ।", "bad");
+    }
+    busy = false;
+    render();
+    if (ok) refreshStatus();
+  }
+
+  async function copyText(text, done) {
     try {
       await navigator.clipboard.writeText(text);
-      say(node, done, "ok");
+      say($("copy-msg"), done, "ok");
     } catch (_) {
-      say(node, "कॉपी नहीं हो सका; टेक्स्ट को दबाकर रखें और खुद कॉपी करें।", "bad");
+      say($("copy-msg"), "कॉपी नहीं हो सका; टेक्स्ट को दबाकर रखें और खुद कॉपी करें।", "bad");
     }
   }
 
@@ -139,88 +148,31 @@
     busy = false;
     el.create.disabled = false;
     render();
-    refreshStatus();
-  });
-
-  // ---------- रजिस्टर ----------
-  el.register.addEventListener("click", async () => {
-    if (busy || !wallet) return;
-    const code = el.code.value.trim().toUpperCase();
-    if (!code) return say(el.registerMsg, "इनवाइट कोड लिखें।", "bad");
-
-    busy = true;
-    render();
-    say(el.registerMsg, "रजिस्टर हो रहा है…", "");
-    try {
-      const r = await post("register", { address: wallet.address, public_key: wallet.publicKey, invite_code: code });
-      if (r.ok) {
-        el.code.value = "";
-        say(el.registerMsg, "", "");
-        busy = false;
-        return refreshStatus();
-      }
-      say(el.registerMsg, "रजिस्टर नहीं हुआ: " + (r.reason || "सर्वर ने कारण नहीं बताया।"), "bad");
-    } catch (_) {
-      say(el.registerMsg, "सर्वर से संपर्क नहीं हो सका। इंटरनेट जाँचकर दोबारा कोशिश करें।", "bad");
+    if (wallet) {
+      status = "not_found";
+      activate(); // बनते ही सक्रिय
     }
-    busy = false;
-    render();
-  });
-
-  // ---------- इनवाइट बनाना ----------
-  el.invite.addEventListener("click", async () => {
-    if (busy || !wallet || status !== "active") return;
-    const pin = el.pin.value;
-    el.inviteResult.hidden = true;
-
-    busy = true;
-    render();
-    say(el.inviteMsg, "इनवाइट बन रहा है…", "");
-    try {
-      // हस्ताक्षर इसी डिवाइस पर बनता है; सर्वर को सिर्फ़ संदेश और हस्ताक्षर जाते हैं
-      const message = Vault.inviteMessage(wallet.address, Date.now());
-      const signature = await Vault.sign(localStorage, pin, message);
-      el.pin.value = "";
-      const r = await post("create-invite", { address: wallet.address, message, signature });
-      if (r.ok) {
-        el.inviteCode.textContent = r.code;
-        el.inviteResult.hidden = false;
-        say(el.inviteMsg, "नया इनवाइट कोड बन गया। इस महीने " + r.left_this_month + " और बना सकते हैं।", "ok");
-      } else {
-        say(el.inviteMsg, "इनवाइट नहीं बना: " + (r.reason || "सर्वर ने कारण नहीं बताया।"), "bad");
-        if (r.code === "wallet_inactive" || r.code === "not_registered") refreshStatus();
-      }
-    } catch (err) {
-      if (err && typeof err.code === "string") {
-        el.pin.value = "";
-        say(el.inviteMsg, err.message, "bad");
-      } else {
-        say(el.inviteMsg, "सर्वर से संपर्क नहीं हो सका। इंटरनेट जाँचकर दोबारा कोशिश करें।", "bad");
-      }
-    }
-    busy = false;
-    render();
   });
 
   // ---------- बाक़ी बटन ----------
-  el.copyAddress.addEventListener("click", () => wallet && copyText(wallet.address, $("copy-msg"), "पता कॉपी हो गया।"));
-  el.copyKey.addEventListener("click", () => wallet && copyText(wallet.publicKey, $("copy-msg"), "Public key कॉपी हो गई।"));
-  el.copyInvite.addEventListener("click", () => copyText(el.inviteCode.textContent, el.inviteMsg, "इनवाइट कोड कॉपी हो गया।"));
-  el.recheck.addEventListener("click", refreshStatus);
+  el.activate.addEventListener("click", activate);
+  el.copyAddress.addEventListener("click", () => wallet && copyText(wallet.address, "पता कॉपी हो गया।"));
+  el.copyKey.addEventListener("click", () => wallet && copyText(wallet.publicKey, "Public key कॉपी हो गई।"));
+  el.recheck.addEventListener("click", () => { triedActivate = false; refreshStatus(); });
 
   el.remove.addEventListener("click", () => {
     if (!wallet) return;
-    if (!confirm("यह वॉलेट इस फ़ोन से हमेशा के लिए हट जाएगा।\n\nबैकअप नहीं है, इसलिए यह वापस नहीं आ सकता, और इसका इनवाइट कोड भी दोबारा काम नहीं करेगा।\n\nक्या सच में हटाएँ?")) return;
+    if (!confirm("यह वॉलेट इस फ़ोन से हमेशा के लिए हट जाएगा।\n\nबैकअप नहीं है, इसलिए यह वापस नहीं आ सकता, और इसमें जमा MNC भी नहीं निकल पाएँगे।\n\nक्या सच में हटाएँ?")) return;
     Vault.removeWallet(localStorage);
     wallet = null;
     status = "loading";
-    el.inviteResult.hidden = true;
+    triedActivate = false;
+    say(el.activateMsg, "", "");
     render();
   });
 
-  setInterval(renderLock, 1000);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && wallet && status !== "active") refreshStatus();
+    if (document.visibilityState === "visible" && wallet && status !== "active" && !busy) refreshStatus();
   });
 
   render();
