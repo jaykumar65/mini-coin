@@ -12,7 +12,7 @@
 
 "use strict";
 
-const CACHE_VERSION = "v1";
+const CACHE_VERSION = "v2";
 const CACHE_PREFIX = "mnc-home-";
 const CACHE_NAME = CACHE_PREFIX + CACHE_VERSION;
 const LEGACY_CACHE_RE = /^mnc-miner-v\d+$/; // पुराना माइनर जब "/" पर था

@@ -115,8 +115,23 @@
     .tile small { display: block; color: var(--muted); font-size: 0.9rem; }
     .tile .go { margin-left: auto; color: var(--muted); font-size: 1.6rem; }
 
-    .more { margin: 16px 0 0; color: var(--muted); font-size: 0.9rem; }
-    .more a { color: var(--accent); }
+    .download {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      margin: 16px 0 0;
+      padding: 14px 16px;
+      min-height: 84px;
+      border-radius: 16px;
+      background: var(--accent);
+      color: var(--accent-ink);
+      text-decoration: none;
+    }
+    .download img { width: 52px; height: 52px; border-radius: 12px; flex: none; }
+    .download b { display: block; font-size: 1.2rem; }
+    .download small { display: block; font-size: 0.88rem; opacity: 0.85; }
+    .download .go { margin-left: auto; font-size: 1.6rem; font-weight: 800; }
+    .download:focus-visible { outline: 2px solid var(--text); outline-offset: 3px; }
 
     .install { margin: 20px 0 0; }
     .install button {
@@ -178,7 +193,15 @@
       </a>
     </nav>
 
-    <p class="more">MNC भेजने और पाने के लिए <a href="/pay/">MNC Pay</a> खोलें।</p>
+    <!-- MNC Pay: लोगों के बीच लेन-देन वाला वॉलेट, अलग ऐप। इंस्टॉल उसी के पेज से होता है। -->
+    <a class="download" href="/pay/?install=1">
+      <img src="/pay/icons/icon-192.png" alt="" width="52" height="52">
+      <span>
+        <b>वॉलेट डाउनलोड करें</b>
+        <small>MNC Pay: MNC भेजें और पाएँ। फ़ोन में अलग ऐप की तरह।</small>
+      </span>
+      <span class="go" aria-hidden="true">↓</span>
+    </a>
 
     <div id="install" class="install">
       <button id="btn-install" type="button" hidden>ऐप इंस्टॉल करें</button>
