@@ -63,7 +63,7 @@
     .sub { color: var(--muted); margin: 0 0 20px; font-size: 0.95rem; }
 
     .install { margin: -8px 0 16px; }
-    .install button { min-height: 44px; padding: 0 16px; font-weight: 600; font-size: 0.9rem; }
+    .install button { width: 100%; min-height: 54px; padding: 0 16px; font-weight: 700; font-size: 1.05rem; }
     .install p { margin: 0; color: var(--muted); font-size: 0.85rem; }
 
     .card {
@@ -266,8 +266,8 @@
 
     <!-- इंस्टॉल: बटन सिर्फ़ beforeinstallprompt मिलने पर दिखता है, वरना संकेत -->
     <div id="install" class="install">
-      <button id="btn-install" type="button" hidden>ऐप इंस्टॉल करें</button>
-      <p id="install-hint">ब्राउज़र मेनू से 'Add to Home screen' चुनें।</p>
+      <button id="btn-install" class="primary" type="button" hidden>माइनिंग ऐप इंस्टॉल करें</button>
+      <p id="install-hint">“माइनिंग ऐप इंस्टॉल करें” बटन नहीं दिखा? Chrome के ऊपर दाईं ओर ⋮ दबाएँ और “Add to Home screen” या “ऐप इंस्टॉल करें” चुनें। iPhone पर: Safari में Share (□↑) दबाकर “Add to Home Screen”।</p>
     </div>
 
     <!-- वॉलेट की पट्टी: माइनर वॉलेट एक अलग ऐप है (wallet/ फ़ोल्डर) -->
@@ -391,6 +391,8 @@
           if (choice.outcome !== "accepted") hint.hidden = false;
         });
       });
+
+      if (/[?&]install=1/.test(location.search)) box.scrollIntoView({ block: "start" });
 
       window.addEventListener("appinstalled", function () {
         deferredPrompt = null;
